@@ -19,12 +19,18 @@ const nextConfig: NextConfig = {
    */
   allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.24"],
   images: {
-    // Spotify album artwork. Hotlinked rather than re-hosted: Spotify's
-    // developer terms restrict copying and modifying their images.
+    // Album artwork is hotlinked rather than re-hosted: Spotify's developer
+    // terms restrict copying and modifying their images.
     remotePatterns: [
-      // Spotify album art, for when the Web API integration is live.
+      // Spotify serves album art from several hosts, and which one you get back
+      // varies by region and by endpoint. `npm run sync` records whichever it
+      // was handed, so all of them have to be allowed or next/image throws.
       { protocol: "https", hostname: "i.scdn.co", pathname: "/image/**" },
-      // Apple Music artwork, which ships with the preview catalogue.
+      { protocol: "https", hostname: "image-cdn-ak.spotifycdn.com", pathname: "/image/**" },
+      { protocol: "https", hostname: "image-cdn-fa.spotifycdn.com", pathname: "/image/**" },
+      // YouTube thumbnails, used only when a track has no Spotify artwork.
+      { protocol: "https", hostname: "i.ytimg.com", pathname: "/vi/**" },
+      // Apple Music artwork, from the older iTunes-sourced catalogue.
       { protocol: "https", hostname: "is1-ssl.mzstatic.com", pathname: "/image/**" },
     ],
     formats: ["image/webp"],

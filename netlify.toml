@@ -1,21 +1,20 @@
-
-# Netlify build config for Melody Wheels.
+# Netlify build settings for Melody Wheels.
 #
-# This is a server-rendered Next.js app (API routes, Spotify OAuth callbacks and
-# server actions), NOT a static export — so `publish` points at .next and the
-# Next.js runtime turns the server routes into Netlify Functions. Setting
-# publish to "out" would ship a broken, route-less site.
+# This is a server-rendered Next.js app, NOT a static export — it has route
+# handlers under /api/* that resolve the playlist. Those only exist if Netlify's
+# Next.js runtime is active.
+#
+# `publish` is deliberately NOT set. The plugin decides it, and pointing it at a
+# directory by hand — `.next`, `out`, `dist` — is the usual cause of a Next app
+# where every route, including `/`, answers Netlify's own 404 page.
 
 [build]
   command = "npm run build"
-  publish = ".next"
 
-# Pinned to the major that matches the local toolchain (node v24.19.0). Netlify
-# otherwise picks its own default, which drifts and can break the build later.
-[build.environment]
-  NODE_VERSION = "24"
-
-# Auto-installed by Netlify for Next.js sites; declared explicitly so the
-# version is resolved from package.json rather than silently floating.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Matches the local toolchain (node v24.19.0). Without a pin Netlify picks its
+# own default, which drifts and can break the build later.
+[build.environment]
+  NODE_VERSION = "24"

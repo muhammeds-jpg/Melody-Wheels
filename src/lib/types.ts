@@ -5,21 +5,29 @@ export type Track = {
   artist: string;
   album: string;
   image: string;
-  /** ms. The PREVIEW's length — what plays when not signed in. */
+  /** ms. The REAL track length. */
   duration: number;
   /**
-   * ms. The real track length from Spotify, used in spotify mode. Kept separate
-   * so the progress bar always states the duration of whatever is actually
-   * playing rather than a number borrowed from the other engine.
+   * ms. Only set when the preview is the audio being played, since a 30-second
+   * clip and the track it came from are different lengths and the progress bar
+   * must state the one actually playing.
    */
-  fullDuration?: number;
+  previewDuration?: number;
   spotifyUrl: string;
   uri: string;
   isPlayable?: boolean;
   /**
-   * 30-second Apple Music preview. This is what actually produces sound until
-   * the Spotify Web Playback SDK is connected — Spotify's Web API returns no
-   * audio URL of any kind.
+   * The YouTube video of this song. This is what plays FULL LENGTH, for every
+   * visitor, with no account and no Premium — the reason the site works the way
+   * saloon.wtf does. Absent when no confident match was found.
+   */
+  youtubeId?: string;
+  /** The video's own title, kept for debugging a bad match. */
+  youtubeTitle?: string;
+  /**
+   * 30-second preview mp3, straight from Spotify's embed payload. The fallback
+   * for a track with no YouTube match. (The official Web API omits this field
+   * entirely, which is why it is collected at sync time.)
    */
   previewUrl?: string;
 };
@@ -107,6 +115,62 @@ export type SpotifyPlayer = {
   removeListener: (event: string) => boolean;
 };
 
+/* ── Minimal YouTube IFrame Player API typings ─────────────────────────────
+   Google ships no types for this either; these cover only what is used. */
+
+export type YouTubePlayer = {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  /** Loads AND plays. */
+  loadVideoById: (videoId: string) => void;
+  /** Loads without playing — no sound until playVideo(). */
+  cueVideoById: (videoId: string) => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  mute: () => void;
+  unMute: () => void;
+  /** Seconds. */
+  getCurrentTime: () => number;
+  /** Seconds. 0 until metadata arrives. */
+  getDuration: () => number;
+  getPlayerState: () => number;
+  destroy: () => void;
+};
+
+export type YouTubePlayerVars = {
+  controls?: 0 | 1;
+  disablekb?: 0 | 1;
+  playsinline?: 0 | 1;
+  rel?: 0 | 1;
+  modestbranding?: 0 | 1;
+  fs?: 0 | 1;
+  iv_load_policy?: 1 | 3;
+  origin?: string;
+  start?: number;
+};
+
+export type YouTubeNamespace = {
+  Player: new (
+    container: HTMLElement | string,
+    options: {
+      videoId?: string;
+      playerVars?: YouTubePlayerVars;
+      events?: {
+        onReady?: (event: { target: YouTubePlayer }) => void;
+        onStateChange?: (event: { data: number; target: YouTubePlayer }) => void;
+        onError?: (event: { data: number }) => void;
+      };
+    },
+  ) => YouTubePlayer;
+  PlayerState: {
+    UNSTARTED: -1;
+    ENDED: 0;
+    PLAYING: 1;
+    PAUSED: 2;
+    BUFFERING: 3;
+    CUED: 5;
+  };
+};
+
 declare global {
   interface Window {
     onSpotifyWebPlaybackSDKReady?: () => void;
@@ -118,5 +182,7 @@ declare global {
         enableMediaSession?: boolean;
       }) => SpotifyPlayer;
     };
+    onYouTubeIframeAPIReady?: () => void;
+    YT?: YouTubeNamespace;
   }
 }

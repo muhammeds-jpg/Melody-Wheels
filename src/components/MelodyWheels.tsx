@@ -9,14 +9,19 @@ import * as spotify from "@/lib/audio-engine";
 import { TopBar } from "./TopBar";
 import { Hero } from "./Hero";
 import { PlayerPill } from "./PlayerPill";
+import { YouTubeMount } from "./YouTubeMount";
 
-/** What the auth routes redirect back with, in plain language. */
+/**
+ * What the optional Spotify auth routes redirect back with. Reaching any of
+ * these is no longer a problem to solve — playback does not depend on Spotify —
+ * so the copy stays out of the listener's way.
+ */
 const AUTH_ERROR_COPY: Record<string, string> = {
-  premium: "That Spotify account isn't Premium — full tracks need it. Playing previews.",
+  premium: "That Spotify account isn't Premium. Playing from YouTube instead.",
   auth_denied: "Spotify sign-in was cancelled.",
-  auth_state: "Sign-in didn't complete. Open the site on 127.0.0.1:3000 and connect again.",
-  auth_failed: "Spotify sign-in failed. Try connecting again.",
-  not_configured: "Spotify isn't configured on this site yet.",
+  auth_state: "Spotify sign-in didn't complete.",
+  auth_failed: "Spotify sign-in failed.",
+  not_configured: "Spotify sign-in isn't set up on this site.",
 };
 
 export function MelodyWheels() {
@@ -27,13 +32,11 @@ export function MelodyWheels() {
     const store = usePlayerStore.getState;
     let cancelled = false;
 
-    // Surface whatever the OAuth round trip came back with.
+    // Surface whatever an optional OAuth round trip came back with.
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("error");
     if (authError) {
-      store().setError(
-        AUTH_ERROR_COPY[authError] ?? "Spotify sign-in didn't complete. Try again.",
-      );
+      store().setError(AUTH_ERROR_COPY[authError] ?? "Spotify sign-in didn't complete.");
     }
     if (authError || params.get("connected")) {
       // Clean the URL so a refresh does not replay the message.
@@ -46,7 +49,8 @@ export function MelodyWheels() {
         const json = (await res.json()) as {
           tracks?: Track[];
           source?: string;
-          spotifyError?: string | null;
+          fullTrackCount?: number;
+          warning?: string | null;
         };
         if (cancelled) return;
 
@@ -56,9 +60,12 @@ export function MelodyWheels() {
         }
 
         store().setTracks(json.tracks);
-        // Useful once Premium lands: says which source actually answered.
-        if (json.spotifyError) {
-          console.info(`catalogue source: ${json.source} — spotify: ${json.spotifyError}`);
+        // Says how the list was resolved, and whether `npm run sync` is due.
+        if (json.warning) console.warn(`catalogue: ${json.warning}`);
+        else {
+          console.info(
+            `catalogue: ${json.source} — ${json.fullTrackCount}/${json.tracks.length} full length`,
+          );
         }
       } catch {
         if (!cancelled) {
@@ -84,7 +91,8 @@ export function MelodyWheels() {
     const store = usePlayerStore.getState;
 
     return engine.subscribe({
-      // These only take effect in preview mode; the SDK drives its own state.
+      // These only take effect in preview mode; the other engines drive
+      // their own state and would otherwise fight this one for the store.
       onPlay: () => {
         if (store().mode === "preview") store().setPlaying(true);
       },
@@ -92,7 +100,9 @@ export function MelodyWheels() {
         if (store().mode === "preview") store().setPlaying(false);
       },
       onTime: (ms) => {
-        if (store().mode === "preview") store().setProgress(ms);
+        // The element's own duration, so the bar states the clip's length
+        // rather than the full track's.
+        if (store().mode === "preview") store().setPreviewProgress(ms, engine.durationMs());
       },
       onEnded: () => {
         if (store().mode === "preview") store().handleEnded();
@@ -263,6 +273,10 @@ export function MelodyWheels() {
 
         {/* Grain sits above the artwork but below the UI. */}
         <div className="grain" aria-hidden />
+
+        {/* The iframe that produces the sound. Rendered but transparent — see
+            YouTubeMount for why it cannot simply be display:none. */}
+        <YouTubeMount />
 
         <div className="shell relative z-10">
           <TopBar />

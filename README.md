@@ -1,149 +1,186 @@
 # Melody Wheels
 
-> A music player that happens to be a website.
+A music player that happens to be a website. One screen, one song at a time, and
+a way straight into the playlist on Spotify or YouTube Music.
 
-One screen, no scrolling, no navigation. A persistent player, a live listener
-count, and the current playlist always one click from Spotify.
+**A visitor opens the site and presses play. That is the whole contract.** No
+login, no Spotify account, no Premium, no cookie banner — and they hear the
+*full* song, not a 30-second sample.
 
-Next.js 15 (App Router) · TypeScript strict · Tailwind v4 · Zustand ·
-Spotify Web API + Web Playback SDK.
+---
+
+## How it plays music without asking anyone to log in
+
+Three public endpoints, no credentials anywhere:
+
+| What | Where it comes from | Needs a key? |
+| --- | --- | --- |
+| The song list, in order | `open.spotify.com/embed/playlist/<id>` | no |
+| Album artwork + real durations | `open.spotify.com/embed/track/<id>` | no |
+| The audio, at **full length** | YouTube IFrame Player API | no |
+| Backup audio (30s) | the preview mp3 in Spotify's embed payload | no |
+
+`npm run sync` does the first three offline and writes
+[src/config/catalogue.generated.ts](src/config/catalogue.generated.ts), which is
+committed. At runtime the site serves that file straight from memory — so the
+player is ready as fast as the page, and a deploy makes **zero** third-party
+calls to boot.
+
+Spotify's *official* Web API is deliberately not used. It refuses to list a
+public playlist's contents without a logged-in user token, and it strips
+`preview_url` entirely. The embed payload has both.
+
+### Playback modes
+
+| Situation | Engine | Length |
+| --- | --- | --- |
+| Anyone, no account (the normal case) | YouTube IFrame API | **full track** |
+| A track with no confident video match | Spotify preview mp3 | 30s |
+| YouTube blocked by an extension or network | Spotify preview mp3 | 30s |
+| Optional: listener connected Spotify Premium | Web Playback SDK | full track |
+
+The pill only ever says "Preview" — it never asks anyone to sign in, because
+there is nothing to sign in to.
+
+---
+
+## Getting started
+
+```bash
+npm install
+npm run sync          # builds the catalogue from the playlist
+npm run dev           # http://127.0.0.1:3000
+```
+
+There is no `.env.local` step. Copy `.env.example` if you want to change the
+playlist by hand or enable the optional extras, but nothing in it is required.
 
 ---
 
 ## Changing the playlist
 
-**The easy way — open `/playlists` in the browser where you connected Spotify:**
-
-```
-http://127.0.0.1:3000/playlists
-```
-
-It lists every playlist on your account. Click **Use this playlist**, then
-restart the dev server. That's it.
-
-That page does two things a terminal command cannot:
-
-1. reads **private** playlists (needs your session)
-2. rebuilds `SEED_TRACKS` — what visitors who have *not* connected Spotify see
-
-Both need the Spotify session, which lives in an httpOnly cookie only the
-browser holds.
-
-**The manual way**, if you already know the playlist id:
+One command. Pass a URL, a `spotify:` URI, or a bare id:
 
 ```bash
-npm run set:playlist 2fi56elb3MinYMHkzVshOH
-npm run set:playlist https://open.spotify.com/playlist/2fi56elb3MinYMHkzVshOH
-npm run set:playlist spotify:playlist:2fi56elb3MinYMHkzVshOH
+npm run sync -- https://open.spotify.com/playlist/4gBDdNfib0QrLBugyKEMJ8
+npm run sync -- spotify:playlist:4gBDdNfib0QrLBugyKEMJ8
+npm run sync -- 4gBDdNfib0QrLBugyKEMJ8
 ```
 
-All three forms work, including share links with `?si=…`. This sets the playlist
-but **cannot** rebuild the seed — use `/playlists` for that.
+It reads the playlist, finds a YouTube video for every track, verifies each one
+actually plays embedded, writes the id into `.env.local`, and regenerates the
+catalogue. Then restart the dev server.
 
-Or edit `.env.local` directly and restart:
+Running it with no argument re-syncs whatever is already configured — useful
+after you add songs to the playlist.
+
+**The playlist must be public.** Open it in a private window to check; if the
+songs do not appear there, the site cannot read it either.
+
+It works six tracks at a time, so a handful of songs takes seconds and a
+100-track playlist takes a few minutes. It searches YouTube and confirms each
+video really plays embedded rather than trusting the first result, which is where
+the time goes. An unreachable page is skipped rather than aborting the run.
+
+### Reading the output
 
 ```
-NEXT_PUBLIC_SPOTIFY_PLAYLIST_ID=2fi56elb3MinYMHkzVshOH
+ 1/3  Khalbinnakame (From "Abhilasham")    fBve4qWA8Go   2:54 vs   2:50  ok
 ```
 
-> Restart the dev server after any of these. Next.js only reads env files at
-> startup.
+That is the video it picked, its length, and the length Spotify reports. `ok`
+means the two agree closely enough to be the same recording. A large percentage
+means it probably matched something else — a live version, a cover, a
+compilation — and is worth checking by ear.
 
-**Finding the id by hand:** in Spotify, right-click the playlist → Share → Copy
-link. The id is the part after `/playlist/`.
+`NO MATCH` means nothing convincing was found, so that track falls back to its
+30-second preview. Matching by length is deliberate: a full-length *wrong* song
+is worse than a correct clip.
 
 ---
 
-## Two playback modes
+## Deploying
 
-| | Not connected | Connected + Premium |
-|---|---|---|
-| Audio | 30-second previews (Apple) | **full tracks** (Spotify SDK) |
-| Login | none | Spotify sign-in |
-| Catalogue | `SEED_TRACKS` fallback | the real playlist |
+Push to a host that runs Next.js server-side. `netlify.toml` is already set up:
+it declares `@netlify/plugin-nextjs` and deliberately does **not** set a
+`publish` directory — pointing that at a folder by hand is the usual reason a
+Next app answers its own 404 on every route, including `/`.
 
-The pill shows **"Full track"** in green when streaming in full, or
-**"Connect for full tracks"** otherwise. Spotify's Web API returns no audio URL
-of any kind — `preview_url` is absent from its track object — which is why
-previews come from Apple and full playback goes through the SDK.
+The only environment variable worth setting in production is
+`NEXT_PUBLIC_SITE_URL`, so OG tags and the sitemap use the real domain. The
+playlist id is read from `.env.local` at sync time and baked into the committed
+catalogue, so it does not need to be set on the host.
 
-## Setup
+---
 
-```bash
-npm install
-npm run gen:icons
-cp .env.example .env.local     # then fill in the two Spotify values
-npm run dev
-```
-
-Open **http://127.0.0.1:3000** — not `localhost`. Spotify rejects `localhost` as
-a redirect URI, and the two are different cookie origins.
-
-In the [Spotify dashboard](https://developer.spotify.com/dashboard):
-
-1. copy the **Client ID** and **Client Secret** into `.env.local`
-2. add this redirect URI, byte for byte:
-   `http://127.0.0.1:3000/auth/spotify/callback`
-3. under *APIs used*, tick **Web API** and **Web Playback SDK**
-
-`npm run check:env` reports anything missing or malformed.
-
-Two constraints worth knowing up front:
-
-- **Full playback needs Premium** — the `streaming` scope refuses free accounts.
-- **Development mode** apps only allow allowlisted users to sign in. The app
-  owner is included automatically; anyone else must be added under
-  *User Management*.
-
-## Scripts
+## Commands
 
 | | |
-|---|---|
-| `npm run dev` | dev server |
-| `npm run build` / `start` | production build / serve |
-| `npm run typecheck` / `lint` | static checks |
-| `npm run check:env` | says exactly which Spotify values are missing |
-| `npm run set:playlist <id>` | point the site at a playlist |
-| `npm run gen:icons` | regenerate PWA / touch icons |
+| --- | --- |
+| `npm run dev` | dev server on 127.0.0.1:3000 |
+| `npm run sync` | rebuild the catalogue from the playlist |
+| `npm run sync -- <url>` | switch to a different playlist |
+| `npm run build` | production build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | eslint |
+| `npm run check:env` | report what is configured |
 
-Building while `npm run dev` is running corrupts `.next`. Use a separate
-directory instead:
+Building while `npm run dev` is running corrupts both — they share `.next`. Use
+a separate directory:
 
 ```bash
-NEXT_DIST_DIR=.next-build npm run build
+NEXT_DIST_DIR=.next-build npx next build
 ```
 
-## Layout
+---
+
+## Architecture
 
 ```
 src/
-├── app/          page, /playlists, api/, auth/, metadata routes
-├── components/   MelodyWheels (shell), TopBar, Hero, PlayerPill
-├── config/       playlist.ts (the playlist + seed), tracks.ts (site copy)
-├── lib/          catalogue, audio-engine (SDK), preview-engine (HTMLAudio),
-│                 spotify-server (SERVER ONLY), presence, player-store
-└── styles/       globals.css
+  config/
+    playlist.ts               which playlist, and how to parse its id
+    catalogue.generated.ts    GENERATED by `npm run sync` — the baked song list
+    tracks.ts                 site copy, and the two top-bar links
+  lib/
+    catalogue.ts              server-only: serves the baked list
+    youtube-engine.ts         the IFrame player — full-length audio, no account
+    preview-engine.ts         a single HTMLAudioElement — the 30s fallback
+    audio-engine.ts           Spotify Web Playback SDK — optional
+    player-store.ts           one set of controls over all three engines
+    presence.ts               the live listener count
+  components/
+    YouTubeMount.tsx          hosts the iframe that makes the sound
+    PlayerPill.tsx            artwork, scrubber, transport
 ```
 
-Four rules worth knowing before editing:
+### Things that will bite you
 
-- **`lib/spotify-server.ts` is server-only.** Importing it from a `"use client"`
-  file would pull the client secret into the browser bundle.
-- **Each engine owns exactly one player instance**, created at module scope. The
-  guard is a cached *promise*, not a null check — `init()` awaits a script, so a
-  null check lets React Strict Mode build two.
-- **The transport never sets state directly.** It calls the engine; the
-  resulting event updates the store. One source of truth.
-- **`duration` is the preview length, `fullDuration` the real one.** The bar
-  always states the length of whatever is actually playing.
+- **Each engine is a module-scope singleton, never built inside a component.**
+  React Strict Mode double-mounts, and a player constructed in the tree becomes
+  two players talking over each other. The API script load is guarded by a
+  cached Promise rather than a null check, so two calls in one tick cannot both
+  append the script tag.
 
-## Deploying
+- **The YouTube iframe must be rendered.** `display:none`, `visibility:hidden`
+  and a 0×0 box each stop playback outright in Safari and get the frame
+  throttled in Chrome. It is laid out at 320×180 and made transparent instead.
 
-`.env.local` is gitignored and must never be committed. Set the same variables
-in your host's dashboard, add the production redirect URI to the Spotify app
-(`https://yourdomain.com/auth/spotify/callback`), and set
-`NEXT_PUBLIC_SITE_URL`.
+- **The player is constructed on page load, not on first press.** It cues the
+  first video from the committed catalogue, which is available synchronously.
+  Waiting for `/api/tracks` first left a window where a quick click arrived
+  before the API had connected, and the first song of a session played as a
+  30-second preview.
 
-The live listener count uses in-memory storage by default, which only counts
-correctly on a single instance. Set `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN` for anything multi-instance, such as Vercel.
+- **`engineDurationMs` beats the track's own metadata.** YouTube's copy of a song
+  is rarely the exact length of Spotify's, and a preview is 30 seconds of a
+  three-minute track. Whichever engine is playing is the authority on how long
+  the thing playing is. Getting this wrong produced a player that said "Full
+  track" over a bar stopping at 0:30.
+
+- **`youtubeFailed` is not `!youtubeReady`.** One is permanent, the other is a
+  second of loading. Conflating them is what caused the bug above.
+
+- **The backdrop must not sit at a negative z-index.** `body` carries an opaque
+  background colour, and a fixed element behind it paints under that rather than
+  under the content — the artwork vanishes and the screen goes black.

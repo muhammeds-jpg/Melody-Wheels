@@ -6,15 +6,14 @@ export const revalidate = 300;
 /**
  * GET /api/track/:id — normalized information for one track.
  *
- * Served from the already-resolved catalogue rather than by calling Spotify
- * directly. Going straight to the Web API meant this route returned 502 for a
- * condition that is neither unexpected nor a fault: Spotify answers 403 for the
- * whole API until the app owner holds Premium. A 5xx for a known, permanent
- * state is noise — it hides real failures in logs and tells the caller the
- * server broke when it did not.
+ * Served from the already-resolved catalogue, which needs no credentials and is
+ * held in memory, so this costs no upstream call. It carries the artwork, the
+ * real duration, the YouTube id and the preview url.
  *
- * The catalogue already carries the artwork, duration and playable preview, so
- * this now answers with real data.
+ * The status codes are kept honest: 400 for a malformed id, 404 for an id that
+ * is simply not in this site's playlist, and 502 reserved for an actual
+ * unexpected failure. A 5xx for a known, permanent state is noise — it hides
+ * real failures in logs and tells the caller the server broke when it did not.
  */
 export async function GET(
   _req: Request,

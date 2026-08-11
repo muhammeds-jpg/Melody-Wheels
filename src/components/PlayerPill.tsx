@@ -3,7 +3,12 @@
 import Image from "next/image";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { usePlayerStore, useCurrentTrack, useDurationMs } from "@/lib/player-store";
+import {
+  usePlayerStore,
+  useCurrentTrack,
+  useDurationMs,
+  useIsFullTrack,
+} from "@/lib/player-store";
 import { formatMs, spokenMs } from "@/lib/format-time";
 
 function Scrubber() {
@@ -123,8 +128,7 @@ export function PlayerPill() {
   const isLoadingCatalogue = usePlayerStore((s) => s.isLoadingCatalogue);
   const catalogueError = usePlayerStore((s) => s.catalogueError);
   const trackError = usePlayerStore((s) => s.error);
-  const mode = usePlayerStore((s) => s.mode);
-  const isConnected = usePlayerStore((s) => s.isConnected);
+  const isFullTrack = useIsFullTrack();
   const toggle = usePlayerStore((s) => s.toggle);
   const next = usePlayerStore((s) => s.next);
   const prev = usePlayerStore((s) => s.prev);
@@ -188,20 +192,16 @@ export function PlayerPill() {
               )}
             </p>
 
-            {/* Says which engine is running, and offers the upgrade. Only shown
-                when it is actionable — never nagging a listener already on
-                full tracks. */}
-            {mode === "spotify" ? (
-              <span className="text-[0.6rem] tracking-[0.18em] whitespace-nowrap text-[#1db954] uppercase">
-                Full track
+            {/*
+              A quiet statement of what is playing, never a prompt. There is
+              nothing to sign in to and nothing to upgrade, so the old "Connect
+              for full tracks" link is gone — full tracks are the default. This
+              only says "Preview" on the rare track with no video match.
+            */}
+            {!isFullTrack && (
+              <span className="text-[0.6rem] tracking-[0.18em] whitespace-nowrap text-[var(--color-ink-faint)] uppercase">
+                Preview
               </span>
-            ) : (
-              <a
-                href="/auth/spotify"
-                className="text-[0.6rem] tracking-[0.14em] whitespace-nowrap text-[var(--color-ink-faint)] uppercase underline decoration-white/25 underline-offset-4 transition-colors hover:text-[var(--color-ink)]"
-              >
-                {isConnected ? "Preview" : "Connect for full tracks"}
-              </a>
             )}
           </div>
         </div>

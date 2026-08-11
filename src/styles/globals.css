@@ -69,8 +69,8 @@
 }
 
 /* ─── Scrolling sub-page ───────────────────────────────────────────────────*/
-/* For ordinary scrolling routes (/playlists), which are not the fixed-height
-   .shell. Same two mobile corrections: 100vh on iOS Safari measures the
+/* For any ordinary scrolling route added later, which would not use the
+   fixed-height .shell. Same two mobile corrections: 100vh on iOS Safari measures the
    viewport WITHOUT the dynamic URL bar, so a bare 100vh overflows and the last
    line hides behind the bar; and the padding has to clear the notch and the
    home indicator in landscape. Kept here rather than as an inline style so the

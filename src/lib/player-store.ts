@@ -2,28 +2,43 @@ import { create } from "zustand";
 import type { Track, WebPlaybackState } from "./types";
 import * as preview from "./preview-engine";
 import * as spotify from "./audio-engine";
+import * as youtube from "./youtube-engine";
 
 /**
- * Two playback modes behind one set of controls.
+ * Three engines behind one set of controls.
  *
- *  - **spotify** — the Web Playback SDK, streaming FULL tracks. Requires the
- *    listener to connect a Spotify Premium account.
- *  - **preview** — a plain `HTMLAudioElement` on 30-second Apple previews. The
- *    fallback for anyone not signed in, so the site still works for everyone.
+ *  - **youtube** — the IFrame Player API, streaming the FULL track. The default
+ *    for everyone: no account, no Premium, no API key. This is what makes the
+ *    site behave like saloon.wtf — open it, press play, hear the whole song.
+ *  - **preview** — an `HTMLAudioElement` on Spotify's own 30-second preview mp3.
+ *    Used only for a track with no YouTube match, or when YouTube is blocked.
+ *  - **spotify** — the Web Playback SDK. An optional extra for a listener who
+ *    has connected a Premium account; nothing requires it.
  *
  * Every transport action branches on `mode`; nothing above this file needs to
  * know which engine is running.
  */
-export type PlaybackMode = "preview" | "spotify";
+export type PlaybackMode = "youtube" | "preview" | "spotify";
+
+export type YouTubePhase = "playing" | "paused" | "buffering" | "ended";
 
 type PlayerState = {
   tracks: Track[];
   index: number;
 
   mode: PlaybackMode;
-  /** A Spotify session exists; full tracks are possible once the SDK is ready. */
+  /** The IFrame player has registered and will accept commands immediately. */
+  youtubeReady: boolean;
+  /**
+   * YouTube is unusable in this browser — the API script was blocked, or it
+   * never came up. Distinct from "not ready yet": one is permanent, the other is
+   * a second of loading, and treating them the same is what once dropped the
+   * first song of a session to a 30-second preview.
+   */
+  youtubeFailed: boolean;
+  /** A Spotify session exists. Only relevant to the optional SDK path. */
   isConnected: boolean;
-  /** The SDK has registered a device and will accept commands. */
+  /** The SDK has registered a device. */
   spotifyReady: boolean;
 
   isLoadingCatalogue: boolean;
@@ -33,6 +48,14 @@ type PlayerState = {
   isBuffering: boolean;
   isIdle: boolean;
   progressMs: number;
+  /**
+   * Length reported by whichever engine is currently playing, or 0 before it
+   * says. It has to win over the track's own metadata: YouTube's copy of a song
+   * is rarely the exact length of Spotify's, and a preview is 30 seconds of a
+   * three-minute track. Getting this wrong is what once produced a player
+   * announcing "Full track" over a bar that stopped at 0:30.
+   */
+  engineDurationMs: number;
   muted: boolean;
   error: string | null;
 
@@ -40,7 +63,8 @@ type PlayerState = {
   setCatalogueError: (message: string | null) => void;
   setConnected: (connected: boolean) => void;
   setSpotifyReady: (ready: boolean) => void;
-  setMode: (mode: PlaybackMode) => void;
+  setYoutubeReady: (ready: boolean) => void;
+  setYoutubeFailed: (failed: boolean) => void;
 
   toggle: () => void;
   next: () => void;
@@ -51,36 +75,119 @@ type PlayerState = {
   setPlaying: (playing: boolean) => void;
   setBuffering: (buffering: boolean) => void;
   setProgress: (ms: number) => void;
+  setPreviewProgress: (positionMs: number, durationMs: number) => void;
   setError: (message: string | null) => void;
   handleEnded: () => void;
+
+  /** Mirror of the IFrame player's onStateChange. */
+  handleYoutubeState: (phase: YouTubePhase) => void;
+  setYoutubeProgress: (positionMs: number, durationMs: number) => void;
+  handleYoutubeError: (message: string) => void;
+
   /** Mirror of the SDK's player_state_changed. */
   syncFromSpotify: (state: WebPlaybackState | null) => void;
 };
 
-/** In spotify mode the full track plays, so its real duration applies. */
-function durationOf(track: Track | undefined, mode: PlaybackMode): number {
+/**
+ * The duration of whatever is ACTUALLY playing — never a number borrowed from
+ * the other engine. See `engineDurationMs`.
+ */
+function durationOf(
+  track: Track | undefined,
+  mode: PlaybackMode,
+  engineDurationMs: number,
+): number {
+  if (engineDurationMs > 0) return engineDurationMs;
   if (!track) return 0;
-  if (mode === "spotify") return track.fullDuration ?? track.duration;
+  // Spotify's previews are a flat 30s; the real length would overstate the bar.
+  if (mode === "preview") return track.previewDuration ?? 30_000;
   return track.duration;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
-  /** The single path every track change goes through. */
-  function goTo(nextIndex: number, autoplay: boolean) {
-    const { tracks, mode } = get();
-    if (tracks.length === 0) return;
+  /**
+   * Videos YouTube refused to embed. Remembered so a track that failed once
+   * goes straight to its preview next time instead of stalling again.
+   */
+  const blockedVideos = new Set<string>();
 
-    const wrapped = ((nextIndex % tracks.length) + tracks.length) % tracks.length;
-    const track = tracks[wrapped];
+  /** Cancels the pending "YouTube never started" fallback, if one is armed. */
+  let watchdog: number | null = null;
+  function clearWatchdog() {
+    if (watchdog !== null) {
+      clearTimeout(watchdog);
+      watchdog = null;
+    }
+  }
 
-    set({ index: wrapped, progressMs: 0, isIdle: false, error: null, isBuffering: autoplay });
+  /**
+   * Chooses YouTube even before the IFrame API has finished loading.
+   *
+   * This is deliberate, and it is the fix for the first song of a session
+   * playing only 30 seconds. The API script takes a second or two, a listener
+   * can easily click faster than that, and requiring `youtubeReady` here meant
+   * the first press committed to a preview and then had no way back — the mode
+   * only ever upgraded while idle, and pressing play is what ends idle.
+   *
+   * The engine queues a load issued before it is ready and applies it on
+   * connect, so committing early costs nothing. `youtubeFailed` covers the case
+   * where it genuinely never arrives, and `armWatchdog` covers it going quiet.
+   */
+  function bestMode(track: Track | undefined): PlaybackMode {
+    if (!track) return "preview";
+    const { youtubeFailed, spotifyReady } = get();
+    if (track.youtubeId && !youtubeFailed && !blockedVideos.has(track.youtubeId)) return "youtube";
+    if (spotifyReady) return "spotify";
+    return "preview";
+  }
+
+  /**
+   * If YouTube has not made a sound within a few seconds, stop waiting and play
+   * the preview instead. Silence with a pause icon showing is the worst possible
+   * outcome, so this trades full length for something audible.
+   */
+  function armWatchdog(track: Track) {
+    clearWatchdog();
+    watchdog = window.setTimeout(() => {
+      watchdog = null;
+      const s = get();
+      if (s.mode !== "youtube" || s.isPlaying || s.isIdle) return;
+      if (!track.previewUrl) return;
+      set({ mode: "preview", engineDurationMs: 0, isBuffering: true });
+      preview.load(track.previewUrl);
+      void preview.play();
+    }, 6000);
+  }
+
+  /** Start `track` on `mode`. The one place playback is actually kicked off. */
+  function start(track: Track, mode: PlaybackMode, autoplay: boolean) {
+    if (mode === "youtube" && track.youtubeId) {
+      // Before the player exists, `load` queues and replays on connect — so a
+      // press that lands during the API load is honoured rather than dropped.
+      if (!youtube.isReady()) {
+        youtube.load(track.youtubeId, autoplay);
+        if (autoplay) armWatchdog(track);
+        return;
+      }
+      // Re-loading the video already cued would restart it, so only load on a
+      // genuine change and otherwise just press play. Keeping play() synchronous
+      // matters: it must stay inside the listener's click, or mobile browsers
+      // refuse the audio.
+      if (youtube.currentVideo() !== track.youtubeId) youtube.load(track.youtubeId, autoplay);
+      else if (autoplay) youtube.play();
+      return;
+    }
 
     if (mode === "spotify") {
-      // Hand Spotify the whole list from this offset so it can gapless-advance;
-      // player_state_changed then keeps `index` in step.
+      const { tracks, index } = get();
       void spotify
-        .playUris(tracks.map((t) => t.uri), wrapped)
-        .catch(() => set({ isBuffering: false, error: "Spotify couldn't start that track." }));
+        .playUris(
+          tracks.map((t) => t.uri),
+          index,
+        )
+        .catch(() =>
+          set({ isBuffering: false, error: "Spotify couldn't start that track." }),
+        );
       return;
     }
 
@@ -92,10 +199,45 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     if (autoplay) void preview.play();
   }
 
+  /** The single path every track change goes through. */
+  function goTo(nextIndex: number, autoplay: boolean) {
+    const { tracks } = get();
+    if (tracks.length === 0) return;
+
+    clearWatchdog();
+
+    const wrapped = ((nextIndex % tracks.length) + tracks.length) % tracks.length;
+    const track = tracks[wrapped];
+    const mode = bestMode(track);
+
+    // Stop the engine we are leaving, or two tracks play over each other.
+    const previous = get().mode;
+    if (previous !== mode) {
+      if (previous === "youtube") youtube.pause();
+      else if (previous === "preview") preview.pause();
+    }
+
+    // Clearing engineDurationMs matters: holding the previous track's length
+    // would size the new track's bar wrongly until the first tick lands.
+    set({
+      index: wrapped,
+      mode,
+      progressMs: 0,
+      engineDurationMs: 0,
+      isIdle: false,
+      error: null,
+      isBuffering: autoplay,
+    });
+
+    start(track, mode, autoplay);
+  }
+
   return {
     tracks: [],
     index: 0,
     mode: "preview",
+    youtubeReady: false,
+    youtubeFailed: false,
     isConnected: false,
     spotifyReady: false,
 
@@ -106,54 +248,89 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     isBuffering: false,
     isIdle: true,
     progressMs: 0,
+    engineDurationMs: 0,
     muted: false,
     error: null,
 
     setTracks: (tracks) =>
-      set({ tracks, index: 0, isLoadingCatalogue: false, catalogueError: null }),
+      set((s) => ({
+        tracks,
+        index: 0,
+        isLoadingCatalogue: false,
+        catalogueError: null,
+        // Point at YouTube straight away when the list carries video ids, so the
+        // display reads the real length rather than 0:30 before the first press.
+        mode:
+          tracks[0]?.youtubeId && !s.youtubeFailed
+            ? "youtube"
+            : s.spotifyReady
+              ? "spotify"
+              : "preview",
+      })),
 
     setCatalogueError: (catalogueError) => set({ catalogueError, isLoadingCatalogue: false }),
 
     setConnected: (isConnected) => set({ isConnected }),
 
+    setYoutubeReady: (youtubeReady) =>
+      set((s) => ({
+        youtubeReady,
+        // Coming up clears any earlier failure, so a retry can recover.
+        youtubeFailed: youtubeReady ? false : s.youtubeFailed,
+      })),
+
+    setYoutubeFailed: (youtubeFailed) =>
+      set((s) => {
+        if (!youtubeFailed) return { youtubeFailed };
+        clearWatchdog();
+        const track = s.tracks[s.index];
+        // Nothing will ever come from YouTube, so hand the current track to the
+        // preview rather than leaving a play button that does nothing.
+        if (s.mode === "youtube" && track?.previewUrl) {
+          preview.load(track.previewUrl);
+          if (!s.isIdle) void preview.play();
+          return { youtubeFailed, mode: "preview" as PlaybackMode, engineDurationMs: 0 };
+        }
+        return { youtubeFailed, mode: s.mode === "youtube" ? "preview" : s.mode };
+      }),
+
     setSpotifyReady: (spotifyReady) =>
       set((s) => ({
         spotifyReady,
-        // Only switch once the device is actually registered, or the first
-        // press would be sent to a player that cannot answer.
-        mode: spotifyReady ? "spotify" : s.mode === "spotify" ? "preview" : s.mode,
+        // YouTube already gives full tracks to everyone, so it keeps priority;
+        // the SDK only picks up tracks YouTube could not cover.
+        mode:
+          s.isIdle && spotifyReady && s.mode === "preview" && !s.tracks[s.index]?.youtubeId
+            ? "spotify"
+            : !spotifyReady && s.mode === "spotify"
+              ? "preview"
+              : s.mode,
       })),
 
     toggle: () => {
-      const { isPlaying, isIdle, tracks, index, mode } = get();
+      const { isPlaying, isIdle, tracks, index } = get();
       if (tracks.length === 0) return;
+      const track = tracks[index];
 
-      if (mode === "spotify") {
-        // The first press must start a context; togglePlay on an idle device
-        // does nothing.
-        if (isIdle) {
-          set({ isIdle: false, isBuffering: true, error: null });
-          void spotify
-            .activate() // must run inside the gesture, or mobile blocks it
-            .then(() => spotify.playUris(tracks.map((t) => t.uri), index))
-            .catch(() => set({ isBuffering: false, error: "Spotify couldn't start playback." }));
-          return;
-        }
-        void spotify.togglePlay();
+      // The first press decides the engine: by now we know whether the IFrame
+      // player came up, which was not yet true when the page loaded.
+      if (isIdle) {
+        const mode = bestMode(track);
+        set({ mode, isIdle: false, isBuffering: true, error: null, engineDurationMs: 0 });
+        start(track, mode, true);
         return;
       }
 
-      if (isIdle) {
-        const track = tracks[index];
-        if (!track?.previewUrl) {
-          set({ error: "No audio for this track." });
-          return;
-        }
-        set({ isIdle: false, isBuffering: true, error: null });
-        preview.load(track.previewUrl);
-        void preview.play().then((ok) => {
-          if (!ok) set({ isBuffering: false });
-        });
+      const { mode } = get();
+
+      if (mode === "youtube") {
+        if (isPlaying) youtube.pause();
+        else youtube.play();
+        return;
+      }
+
+      if (mode === "spotify") {
+        void spotify.togglePlay();
         return;
       }
 
@@ -162,6 +339,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     next: () => {
+      // Spotify keeps its own queue, so let the SDK advance it and report back.
       if (get().mode === "spotify") {
         void spotify.nextTrack();
         return;
@@ -172,7 +350,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     prev: () => {
       // Standard behaviour: restart the track if we are more than 3s in.
       if (get().progressMs > 3000) {
-        if (get().mode === "spotify") void spotify.seek(0);
+        const { mode } = get();
+        if (mode === "youtube") youtube.seek(0);
+        else if (mode === "spotify") void spotify.seek(0);
         else preview.seek(0);
         set({ progressMs: 0 });
         return;
@@ -185,31 +365,87 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     seekTo: (ms) => {
-      const { tracks, index, mode } = get();
-      const duration = durationOf(tracks[index], mode);
+      const { tracks, index, mode, engineDurationMs } = get();
+      const duration = durationOf(tracks[index], mode, engineDurationMs);
       const clamped = Math.max(0, Math.min(ms, duration || ms));
       set({ progressMs: clamped }); // optimistic: keeps the thumb under the finger
-      if (mode === "spotify") void spotify.seek(clamped);
+      if (mode === "youtube") youtube.seek(clamped / 1000);
+      else if (mode === "spotify") void spotify.seek(clamped);
       else preview.seek(clamped / 1000);
     },
 
     toggleMute: () => {
       const muted = !get().muted;
       set({ muted });
-      if (get().mode === "spotify") void spotify.setMuted(muted);
+      const { mode } = get();
+      if (mode === "youtube") youtube.setMuted(muted);
+      else if (mode === "spotify") void spotify.setMuted(muted);
       else preview.setMuted(muted);
     },
-
-    setMode: (mode) => set({ mode }),
 
     setPlaying: (isPlaying) => set({ isPlaying, isBuffering: false, isIdle: false }),
     setBuffering: (isBuffering) => set({ isBuffering }),
     setProgress: (progressMs) => set({ progressMs }),
     setError: (error) => set({ error }),
 
+    setPreviewProgress: (progressMs, durationMs) =>
+      set(durationMs > 0 ? { progressMs, engineDurationMs: durationMs } : { progressMs }),
+
     handleEnded: () => goTo(get().index + 1, true),
 
+    /* ── YouTube ─────────────────────────────────────────────────────────── */
+
+    handleYoutubeState: (phase) => {
+      if (get().mode !== "youtube") return;
+      switch (phase) {
+        case "playing":
+          // It made it. Stop the fallback from stealing playback later.
+          clearWatchdog();
+          set({ isPlaying: true, isBuffering: false, isIdle: false, error: null });
+          break;
+        case "paused":
+          set({ isPlaying: false, isBuffering: false });
+          break;
+        case "buffering":
+          set({ isBuffering: true });
+          break;
+        case "ended":
+          set({ isPlaying: false });
+          get().handleEnded();
+          break;
+      }
+    },
+
+    setYoutubeProgress: (progressMs, durationMs) => {
+      if (get().mode !== "youtube") return;
+      set(durationMs > 0 ? { progressMs, engineDurationMs: durationMs } : { progressMs });
+    },
+
+    handleYoutubeError: (message) => {
+      clearWatchdog();
+      const { tracks, index, isIdle } = get();
+      const track = tracks[index];
+
+      // "The uploader doesn't allow this off YouTube" is permanent. Retrying is
+      // pointless, so drop this track to its 30-second preview and remember the
+      // video, rather than stalling on a play button that will never work.
+      if (youtube.isEmbedBlocked(message) && track?.youtubeId) {
+        blockedVideos.add(track.youtubeId);
+        if (track.previewUrl) {
+          set({ mode: "preview", engineDurationMs: 0, isBuffering: !isIdle, error: null });
+          preview.load(track.previewUrl);
+          if (!isIdle) void preview.play();
+          return;
+        }
+      }
+
+      set({ isBuffering: false, isPlaying: false, error: message });
+    },
+
+    /* ── Spotify (optional) ──────────────────────────────────────────────── */
+
     syncFromSpotify: (state) => {
+      if (get().mode !== "spotify") return;
       if (!state) {
         // Playback moved to another Spotify device.
         set({ isPlaying: false });
@@ -225,6 +461,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         isBuffering: false,
         isIdle: false,
         progressMs: state.position,
+        ...(state.duration > 0 ? { engineDurationMs: state.duration } : {}),
         error: null,
       });
     },
@@ -236,5 +473,10 @@ export function useCurrentTrack(): Track | null {
 }
 
 export function useDurationMs(): number {
-  return usePlayerStore((s) => durationOf(s.tracks[s.index], s.mode));
+  return usePlayerStore((s) => durationOf(s.tracks[s.index], s.mode, s.engineDurationMs));
+}
+
+/** True when the whole track is playing rather than a 30-second clip. */
+export function useIsFullTrack(): boolean {
+  return usePlayerStore((s) => s.mode === "youtube" || s.mode === "spotify");
 }

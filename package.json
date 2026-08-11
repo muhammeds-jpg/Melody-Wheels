@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "gen:icons": "node scripts/gen-icons.mjs",
     "check:env": "node scripts/check-env.mjs",
-    "set:playlist": "node scripts/set-playlist.mjs",
+    "sync": "node scripts/sync-playlist.mjs",
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
