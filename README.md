@@ -62,14 +62,19 @@ playlist by hand or enable the optional extras, but nothing in it is required.
 One command. Pass a URL, a `spotify:` URI, or a bare id:
 
 ```bash
-npm run sync -- https://open.spotify.com/playlist/4gBDdNfib0QrLBugyKEMJ8
-npm run sync -- spotify:playlist:4gBDdNfib0QrLBugyKEMJ8
-npm run sync -- 4gBDdNfib0QrLBugyKEMJ8
+npm run sync -- https://open.spotify.com/playlist/<id>
+npm run sync -- spotify:playlist:<id>
+npm run sync -- <id>
 ```
 
 It reads the playlist, finds a YouTube video for every track, verifies each one
 actually plays embedded, writes the id into `.env.local`, and regenerates the
 catalogue. Then restart the dev server.
+
+That command is the ONLY place the playlist is chosen. `catalogue.generated.ts`
+and `.env.local` are both written by it, and `src/config/playlist.ts` derives its
+default from the generated file — so there is no second copy of the id to
+forget. Nothing else needs editing, on your machine or on the host.
 
 Running it with no argument re-syncs whatever is already configured — useful
 after you add songs to the playlist.

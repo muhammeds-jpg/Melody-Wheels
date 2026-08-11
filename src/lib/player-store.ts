@@ -142,6 +142,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   }
 
   /**
+   * Can anything actually make a sound for this track?
+   *
+   * A track needs either a YouTube match or a preview mp3, and some have
+   * neither: Spotify omits the preview for a fair number of tracks (8 of 100 on
+   * one real playlist), and not every song can be found on YouTube. Without this
+   * check, hitting one such track stops the playlist dead on silence.
+   */
+  function isPlayable(track: Track | undefined): boolean {
+    if (!track) return false;
+    const { youtubeFailed } = get();
+    if (track.youtubeId && !youtubeFailed && !blockedVideos.has(track.youtubeId)) return true;
+    return Boolean(track.previewUrl);
+  }
+
+  /**
    * If YouTube has not made a sound within a few seconds, stop waiting and play
    * the preview instead. Silence with a pause icon showing is the worst possible
    * outcome, so this trades full length for something audible.
@@ -199,8 +214,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     if (autoplay) void preview.play();
   }
 
-  /** The single path every track change goes through. */
-  function goTo(nextIndex: number, autoplay: boolean) {
+  /**
+   * The single path every track change goes through.
+   *
+   * @param step - which way to keep going if a track turns out to be silent.
+   *   Skipping must follow the listener's direction: pressing Previous onto an
+   *   unplayable track should carry on backwards, not spring forwards.
+   * @param skipped - guard against a playlist where nothing can play. Without
+   *   it, an all-silent catalogue would recurse forever.
+   */
+  function goTo(nextIndex: number, autoplay: boolean, step: 1 | -1 = 1, skipped = 0) {
     const { tracks } = get();
     if (tracks.length === 0) return;
 
@@ -208,6 +231,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     const wrapped = ((nextIndex % tracks.length) + tracks.length) % tracks.length;
     const track = tracks[wrapped];
+
+    // Step over a track that has neither a video nor a preview, rather than
+    // landing on it and going quiet with the transport still showing Pause.
+    if (!isPlayable(track)) {
+      if (skipped < tracks.length - 1) {
+        goTo(wrapped + step, autoplay, step, skipped + 1);
+        return;
+      }
+      set({
+        index: wrapped,
+        isPlaying: false,
+        isBuffering: false,
+        error: "Nothing in this playlist can be played.",
+      });
+      return;
+    }
+
     const mode = bestMode(track);
 
     // Stop the engine we are leaving, or two tracks play over each other.
@@ -315,6 +355,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // The first press decides the engine: by now we know whether the IFrame
       // player came up, which was not yet true when the page loaded.
       if (isIdle) {
+        // If the playlist happens to open on a track with no audio, move to one
+        // that has some rather than answering the first press with silence.
+        if (!isPlayable(track)) {
+          goTo(index + 1, true);
+          return;
+        }
         const mode = bestMode(track);
         set({ mode, isIdle: false, isBuffering: true, error: null, engineDurationMs: 0 });
         start(track, mode, true);
@@ -361,7 +407,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         void spotify.previousTrack();
         return;
       }
-      goTo(get().index - 1, !get().isIdle);
+      // step -1: keep going backwards if the previous track has no audio.
+      goTo(get().index - 1, !get().isIdle, -1);
     },
 
     seekTo: (ms) => {

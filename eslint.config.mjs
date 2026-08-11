@@ -15,8 +15,11 @@ const eslintConfig = [
     ignores: [
       "node_modules/**",
       ".next/**",
-      // Alternate dist dir used when building alongside a running dev server.
-      ".next-build/**",
+      // ANY alternate dist dir (NEXT_DIST_DIR=.next-build, .next-verify, …).
+      // Naming them one at a time meant an unlisted one got linted as source:
+      // a stray `.next-verify` produced 4851 problems from minified bundles,
+      // which buries the handful of real findings completely.
+      ".next-*/**",
       "out/**",
       "build/**",
       "next-env.d.ts",

@@ -15,7 +15,11 @@
 
 # next.js
 /.next/
-/.next-build/
+# Any alternate dist dir (NEXT_DIST_DIR=.next-build, .next-verify, …). A glob
+# rather than one entry per name: a stray verification build that is NOT matched
+# here gets swept into the repo whole by `git add -A`, which is thousands of
+# minified files and a genuinely painful commit to unpick.
+/.next-*/
 /out/
 
 # production
