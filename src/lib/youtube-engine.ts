@@ -66,6 +66,20 @@ let ticker: number | null = null;
 /** What we asked for, so a play() arriving before onReady is not lost. */
 let pending: { videoId: string; autoplay: boolean } | null = null;
 let currentVideoId = "";
+/**
+ * Has this player ever actually produced playback?
+ *
+ * The video cued at mount sits in CUED state, and `playVideo()` on it is not
+ * reliable — it can silently do nothing, leaving the transport showing Pause
+ * over a frozen 0:00. `loadVideoById` always works, so the FIRST start goes
+ * through that instead. After that `playVideo()` is correct, because reloading
+ * would restart the track rather than resuming it.
+ */
+let hasPlayed = false;
+
+export function hasEverPlayed(): boolean {
+  return hasPlayed;
+}
 
 /**
  * YouTube's own error codes. 101/150 are the ones that actually bite: the
@@ -160,6 +174,7 @@ export function mount(
               if (!state || !handlers) return;
               switch (event.data) {
                 case state.PLAYING:
+                  hasPlayed = true;
                   handlers.onPlay();
                   startTicker();
                   break;

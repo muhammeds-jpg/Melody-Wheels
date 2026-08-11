@@ -177,18 +177,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   /** Start `track` on `mode`. The one place playback is actually kicked off. */
   function start(track: Track, mode: PlaybackMode, autoplay: boolean) {
     if (mode === "youtube" && track.youtubeId) {
+      // The watchdog is armed for EVERY autoplay attempt, not just the
+      // not-ready case. A play command that is accepted and then quietly does
+      // nothing is the failure that actually happens, and it used to have no
+      // recovery at all — the transport showed Pause over a frozen 0:00.
+      if (autoplay) armWatchdog(track);
+
       // Before the player exists, `load` queues and replays on connect — so a
       // press that lands during the API load is honoured rather than dropped.
       if (!youtube.isReady()) {
         youtube.load(track.youtubeId, autoplay);
-        if (autoplay) armWatchdog(track);
         return;
       }
-      // Re-loading the video already cued would restart it, so only load on a
-      // genuine change and otherwise just press play. Keeping play() synchronous
-      // matters: it must stay inside the listener's click, or mobile browsers
-      // refuse the audio.
-      if (youtube.currentVideo() !== track.youtubeId) youtube.load(track.youtubeId, autoplay);
+
+      // `playVideo()` on the video merely CUED at mount is unreliable, so the
+      // first start always goes through an explicit load. Afterwards, reloading
+      // would restart the track instead of resuming, so play() is correct.
+      const needsExplicitLoad =
+        youtube.currentVideo() !== track.youtubeId || (autoplay && !youtube.hasEverPlayed());
+
+      // Keeping this synchronous matters: it must stay inside the listener's
+      // click, or mobile browsers refuse the audio.
+      if (needsExplicitLoad) youtube.load(track.youtubeId, autoplay);
       else if (autoplay) youtube.play();
       return;
     }

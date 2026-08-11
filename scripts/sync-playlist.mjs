@@ -465,11 +465,15 @@ const playlistId = parsePlaylistId(arg || playlistIdFromEnv());
 
 if (!playlistId) {
   console.error(`
-No playlist given.
+No playlist given. Pass the one you want, for example:
 
-    npm run sync -- https://open.spotify.com/playlist/<id>
+    npm run sync -- https://open.spotify.com/playlist/4fyTKh4Qlk2yecsIlomofR
 
-or put NEXT_PUBLIC_SPOTIFY_PLAYLIST_ID in .env.local and just run \`npm run sync\`.
+A bare id or a spotify:playlist: URI works too, and the playlist must be PUBLIC.
+Note there are no angle brackets: PowerShell reserves < for redirection, so a
+<placeholder> copied from here fails before npm even runs.
+
+Or set NEXT_PUBLIC_SPOTIFY_PLAYLIST_ID in .env.local and just run \`npm run sync\`.
 `);
   process.exit(1);
 }

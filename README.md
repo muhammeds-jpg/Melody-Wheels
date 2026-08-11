@@ -59,13 +59,18 @@ playlist by hand or enable the optional extras, but nothing in it is required.
 
 ## Changing the playlist
 
-One command. Pass a URL, a `spotify:` URI, or a bare id:
+One command. Pass a URL, a `spotify:` URI, or a bare id — whichever you have:
 
 ```bash
-npm run sync -- https://open.spotify.com/playlist/<id>
-npm run sync -- spotify:playlist:<id>
-npm run sync -- <id>
+npm run sync -- https://open.spotify.com/playlist/4fyTKh4Qlk2yecsIlomofR
+npm run sync -- spotify:playlist:4fyTKh4Qlk2yecsIlomofR
+npm run sync -- 4fyTKh4Qlk2yecsIlomofR
 ```
+
+Substitute your own id. A real one is shown rather than a `<placeholder>` on
+purpose: PowerShell reserves `<` for redirection, so pasting angle brackets fails
+with *"The '<' operator is reserved for future use"* before npm ever runs — and
+bash would read it as a redirect.
 
 It reads the playlist, finds a YouTube video for every track, verifies each one
 actually plays embedded, writes the id into `.env.local`, and regenerates the
@@ -124,7 +129,7 @@ catalogue, so it does not need to be set on the host.
 | --- | --- |
 | `npm run dev` | dev server on 127.0.0.1:3000 |
 | `npm run sync` | rebuild the catalogue from the playlist |
-| `npm run sync -- <url>` | switch to a different playlist |
+| `npm run sync -- URL_OR_ID` | switch to a different playlist |
 | `npm run build` | production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | eslint |
