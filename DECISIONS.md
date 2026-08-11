@@ -1,4 +1,4 @@
-# Melody Wheels — Decisions
+# Pattu Vandi — Decisions
 
 Where the PRD required a judgement call, and what is genuinely blocking.
 
@@ -10,7 +10,7 @@ Where the PRD required a judgement call, and what is genuinely blocking.
 
 §12 acknowledges it, and it is worth stating in plain terms: the Web Playback
 SDK's `streaming` scope is **Premium only**. A free account gets `account_error`
-and cannot play a single second. Melody Wheels is therefore not a link you can
+and cannot play a single second. Pattu Vandi is therefore not a link you can
 send to anyone — it is a link you can send to Premium subscribers who are willing
 to log in with Spotify.
 
@@ -34,7 +34,7 @@ Treat it as blocking. Building further does not make it go away.
 
 The instruction was to avoid an iframe embed. That is exactly what §12's
 preferred option gives: the SDK registers a Spotify Connect device in the browser
-and streams into it, while Melody Wheels draws its own UI. There is no visible
+and streams into it, while Pattu Vandi draws its own UI. There is no visible
 embed and no third-party chrome.
 
 For completeness: the SDK does create a hidden iframe internally as its transport.
@@ -134,7 +134,7 @@ the viewport.
 
 The repo previously held two earlier explorations — a self-hosted catalogue and a
 YouTube IFrame player — plus a Redis listener count. All are gone: none appear in
-the Melody Wheels PRD, and §36's MVP list does not include a listener count.
+the Pattu Vandi PRD, and §36's MVP list does not include a listener count.
 Nothing was committed to git before deletion, so there is no history to recover
 them from.
 

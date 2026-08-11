@@ -134,7 +134,7 @@ export function PlayerPill() {
   const prev = usePlayerStore((s) => s.prev);
 
   if (catalogueError) return <PillSkeleton message={catalogueError} />;
-  if (isLoadingCatalogue) return <PillSkeleton message="Loading melody…" />;
+  if (isLoadingCatalogue) return <PillSkeleton message="Loading tracks…" />;
   if (!track) return null;
 
   return (

@@ -75,7 +75,7 @@ export function publishMetadata(track: Track | null): void {
     ms.metadata = new MediaMetadata({
       title: track.name,
       artist: track.artist,
-      album: track.album || "Melody Wheels",
+      album: track.album || "Pattu Vandi",
       artwork: artworkFor(track),
     });
   } catch {

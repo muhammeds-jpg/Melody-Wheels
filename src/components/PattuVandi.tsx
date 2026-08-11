@@ -25,7 +25,7 @@ const AUTH_ERROR_COPY: Record<string, string> = {
   not_configured: "Spotify sign-in isn't set up on this site.",
 };
 
-export function MelodyWheels() {
+export function PattuVandi() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = useCurrentTrack();
   const durationMs = useDurationMs();
@@ -312,7 +312,7 @@ export function MelodyWheels() {
           {/* Served from public/. next/image still optimises it: the 6.9MB PNG
               goes out as a ~43KB WebP at this size. */}
           <Image
-            src="/Melody_Wheels.png"
+            src="/pattu-vandi-backdrop.png"
             alt=""
             fill
             priority

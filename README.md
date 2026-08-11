@@ -1,4 +1,4 @@
-# Melody Wheels
+# Pattu Vandi
 
 A music player that happens to be a website. One screen, one song at a time, and
 a way straight into the playlist on Spotify or YouTube Music.
@@ -158,8 +158,11 @@ src/
     preview-engine.ts         a single HTMLAudioElement — the 30s fallback
     audio-engine.ts           Spotify Web Playback SDK — optional
     player-store.ts           one set of controls over all three engines
+    resume.ts                 where the listener left off, across reloads
+    media-session.ts          lock screen, media keys, Bluetooth buttons
     presence.ts               the live listener count
   components/
+    PattuVandi.tsx            the whole screen; wires the engines to the UI
     YouTubeMount.tsx          hosts the iframe that makes the sound
     PlayerPill.tsx            artwork, scrubber, transport
 ```

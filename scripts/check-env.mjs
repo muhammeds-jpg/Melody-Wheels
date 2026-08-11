@@ -34,7 +34,7 @@ if (existsSync(ENV_FILE)) {
 const configuredId = env.NEXT_PUBLIC_SPOTIFY_PLAYLIST_ID ?? "";
 let problems = 0;
 
-console.log("\nMelody Wheels — preflight\n");
+console.log("\nPattu Vandi — preflight\n");
 console.log("The playlist");
 
 if (!configuredId) {

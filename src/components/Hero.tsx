@@ -16,7 +16,7 @@ export function Hero() {
   return (
     <section
       className="stage flex items-center justify-center px-5 sm:px-6"
-      aria-label="Paattu Vandi"
+      aria-label="Pattu Vandi"
     >
       <div className="anim-stage flex flex-col items-center text-center">
         <p className="eyebrow mb-4 sm:mb-5">
@@ -25,11 +25,14 @@ export function Hero() {
 
         {/* The drawn title logo, not set type. `unoptimized` because the file is
             already a small vector — routing it through the image optimizer would
-            rasterise it and cost sharpness for no saving. */}
+            rasterise it and cost sharpness for no saving.
+
+            The filename has no spaces, so the src needs no %20 escaping — one
+            less thing to get wrong when this moves between hosts. */}
         <h1 className="leading-none">
           <Image
-            src="/Paattu%20vandi%20title%20logo.svg"
-            alt="Paattu Vandi"
+            src="/pattu-vandi-logo.svg"
+            alt="Pattu Vandi"
             width={1738}
             height={535}
             className="wordmark"
