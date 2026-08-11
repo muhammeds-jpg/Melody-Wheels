@@ -268,7 +268,7 @@ export function MelodyWheels() {
                 "radial-gradient(120% 80% at 50% 45%, transparent 30%, rgba(0,0,0,0.55) 100%)",
             }}
           />
-          <div className="absolute inset-0 bg-[#2a140a] opacity-25 mix-blend-multiply" />
+          <div className="absolute inset-0 bg-[#2a140a] opacity-10 mix-blend-multiply" />
         </div>
 
         {/* Grain sits above the artwork but below the UI. */}

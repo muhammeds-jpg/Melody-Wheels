@@ -10,6 +10,9 @@
   --color-ink-soft: #cdc3b6;
   --color-ink-faint: #8d8377;
   --color-terracotta: #c2603f;
+  /* The gold the title logo is drawn in. Anything that sits beside the mark
+     uses this same value so the two read as one piece of branding. */
+  --color-gold: #e0b24e;
 
   --font-sans: var(--font-sans-stack), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), ui-serif, Georgia, serif;
@@ -118,28 +121,29 @@
   font-size: 0.6875rem;
   letter-spacing: 0.34em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+  /* Gold rather than faded ink: it is the only other type on the stage, and
+     matching the logo makes it read as part of the mark instead of a caption. */
+  color: var(--color-gold);
   text-indent: 0.34em; /* optical: letter-spacing pads the right edge only */
 }
 
-.wordmark {
-  font-family: var(--font-display);
-  font-weight: 400;
-  /* Tight enough that the two lines read as one mark. */
-  line-height: 0.84;
-  letter-spacing: -0.02em;
-  /* Floor lowered from 3.5rem: at 280px the old minimum forced the mark wider
-     than the viewport's usable width. */
-  font-size: clamp(2.75rem, 15vw, 12rem);
-  color: var(--color-ink);
-  text-shadow: 0 2px 40px rgb(0 0 0 / 0.5);
+/* The other small caption on the stage. Same gold as the eyebrow and the logo,
+   so all three read as one mark rather than three unrelated bits of type. */
+.press-hint {
+  color: var(--color-gold);
 }
 
-/* The italic second line is the wordmark's signature. */
-.wordmark-italic {
-  font-style: italic;
-  /* Italics of this face lean off their box; nudge back to optical centre. */
-  margin-left: -0.02em;
+/* The wordmark is a drawn logo, so it is sized by width, not by font-size.
+   The floor keeps it inside a 280px viewport once .stage padding is taken out;
+   the ceiling stops it outgrowing the stage on a desktop monitor. */
+.wordmark {
+  display: block;
+  width: clamp(15rem, 74vw, 40rem);
+  height: auto;
+  /* Both axes get constrained at short viewport heights; contain keeps the
+     drawing from stretching when they fight. */
+  object-fit: contain;
+  filter: drop-shadow(0 2px 40px rgb(0 0 0 / 0.5));
 }
 
 .track-title {
@@ -413,8 +417,12 @@
     justify-self: end;
   }
 
+  /* Height is the scarce axis here, so drive the logo off it and let the
+     width follow the aspect ratio. */
   .wordmark {
-    font-size: clamp(2rem, 11vh, 3.75rem);
+    width: auto;
+    height: clamp(2.25rem, 16vh, 4.5rem);
+    max-width: 74vw;
   }
 
   .eyebrow,
