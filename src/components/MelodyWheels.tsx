@@ -1,0 +1,275 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect } from "react";
+import type { Track } from "@/lib/types";
+import { usePlayerStore } from "@/lib/player-store";
+import * as engine from "@/lib/preview-engine";
+import * as spotify from "@/lib/audio-engine";
+import { TopBar } from "./TopBar";
+import { Hero } from "./Hero";
+import { PlayerPill } from "./PlayerPill";
+
+/** What the auth routes redirect back with, in plain language. */
+const AUTH_ERROR_COPY: Record<string, string> = {
+  premium: "That Spotify account isn't Premium — full tracks need it. Playing previews.",
+  auth_denied: "Spotify sign-in was cancelled.",
+  auth_state: "Sign-in didn't complete. Open the site on 127.0.0.1:3000 and connect again.",
+  auth_failed: "Spotify sign-in failed. Try connecting again.",
+  not_configured: "Spotify isn't configured on this site yet.",
+};
+
+export function MelodyWheels() {
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+
+  /** Hydrate the catalogue at runtime — nothing about it is baked into the build. */
+  useEffect(() => {
+    const store = usePlayerStore.getState;
+    let cancelled = false;
+
+    // Surface whatever the OAuth round trip came back with.
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("error");
+    if (authError) {
+      store().setError(
+        AUTH_ERROR_COPY[authError] ?? "Spotify sign-in didn't complete. Try again.",
+      );
+    }
+    if (authError || params.get("connected")) {
+      // Clean the URL so a refresh does not replay the message.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/tracks", { cache: "no-store" });
+        const json = (await res.json()) as {
+          tracks?: Track[];
+          source?: string;
+          spotifyError?: string | null;
+        };
+        if (cancelled) return;
+
+        if (!res.ok || !json.tracks?.length) {
+          store().setCatalogueError("Couldn't load the playlist. Try again shortly.");
+          return;
+        }
+
+        store().setTracks(json.tracks);
+        // Useful once Premium lands: says which source actually answered.
+        if (json.spotifyError) {
+          console.info(`catalogue source: ${json.source} — spotify: ${json.spotifyError}`);
+        }
+      } catch {
+        if (!cancelled) {
+          store().setCatalogueError("Couldn't load the playlist. Try again shortly.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Wire the media element once. Progress comes from its own `timeupdate`, so
+   * the bar cannot drift from the audio the way a timer would.
+   *
+   * Attaching here rather than in the store keeps the listeners tied to a React
+   * lifecycle; the element itself is a module singleton, so Strict Mode's
+   * double-mount attaches and detaches without ever creating a second stream.
+   */
+  useEffect(() => {
+    const store = usePlayerStore.getState;
+
+    return engine.subscribe({
+      // These only take effect in preview mode; the SDK drives its own state.
+      onPlay: () => {
+        if (store().mode === "preview") store().setPlaying(true);
+      },
+      onPause: () => {
+        if (store().mode === "preview") store().setPlaying(false);
+      },
+      onTime: (ms) => {
+        if (store().mode === "preview") store().setProgress(ms);
+      },
+      onEnded: () => {
+        if (store().mode === "preview") store().handleEnded();
+      },
+      onWaiting: () => {
+        if (store().mode === "preview") store().setBuffering(true);
+      },
+      onError: () => {
+        if (store().mode === "preview") store().setError("This track could not be played.");
+      },
+    });
+  }, []);
+
+  /**
+   * Full-track playback. Only attempted when a Spotify session exists — the
+   * SDK's getOAuthToken would fail on its first call otherwise.
+   *
+   * Everything stays on previews until the SDK reports a registered device, so
+   * a failure here degrades rather than breaking playback entirely.
+   */
+  useEffect(() => {
+    const store = usePlayerStore.getState;
+    let cancelled = false;
+
+    void (async () => {
+      const connected = await spotify.isAuthenticated();
+      if (cancelled) return;
+      store().setConnected(connected);
+      if (!connected) return;
+
+      void spotify
+        .init({
+          onReady: () => !cancelled && store().setSpotifyReady(true),
+          onNotReady: () => !cancelled && store().setSpotifyReady(false),
+          onState: (state) => !cancelled && store().syncFromSpotify(state),
+          onAutoplayFailed: () => {
+            // Expected on mobile until a gesture; the play button is the gesture.
+          },
+          onError: (kind, message) => {
+            if (cancelled) return;
+            console.warn(`spotify: ${kind}_error`, message);
+            // Premium is the usual cause; fall back rather than dead-end.
+            store().setSpotifyReady(false);
+            if (kind === "account") {
+              store().setError("Spotify Premium is required for full tracks — playing previews.");
+            } else if (kind === "authentication") {
+              store().setConnected(false);
+            }
+          },
+        })
+        .catch(() => {
+          if (!cancelled) store().setSpotifyReady(false);
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+      // The engine is a module singleton; disconnecting here would tear down
+      // the player that Strict Mode's second mount is about to reuse.
+    };
+  }, []);
+
+  // The SDK reports position only on change, so poll while it is playing.
+  useEffect(() => {
+    if (!isPlaying) return;
+    const store = usePlayerStore.getState;
+    if (store().mode !== "spotify") return;
+
+    const timer = window.setInterval(() => {
+      void spotify.getState().then((state) => {
+        if (state) usePlayerStore.getState().syncFromSpotify(state);
+      });
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [isPlaying]);
+
+  // Keyboard shortcuts (§33): space/k play-pause, arrows seek, j/l prev/next.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLElement &&
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)
+      ) {
+        return;
+      }
+
+      const store = usePlayerStore.getState();
+      switch (e.key) {
+        case " ":
+        case "k":
+        case "K":
+          // Space would otherwise scroll and re-trigger the focused button.
+          e.preventDefault();
+          store.toggle();
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          store.seekTo(store.progressMs + 5000);
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          store.seekTo(store.progressMs - 5000);
+          break;
+        case "j":
+        case "J":
+          store.prev();
+          break;
+        case "l":
+        case "L":
+          store.next();
+          break;
+        default:
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  return (
+    <>
+      {/*
+        Full-bleed backdrop, and a sibling of .shell rather than a child.
+
+        It must NOT use a negative z-index: `body` carries an opaque
+        background-color, and a fixed element at -z-10 paints behind that
+        background rather than behind the content — which renders the whole
+        artwork invisible and leaves a black screen. z-0 here, content above.
+      */}
+      {/*
+        `is-playing` lives on a wrapper around BOTH the backdrop and the shell.
+        It was on .shell, which meant `.is-playing .backdrop` could never match
+        once the backdrop became a sibling — the drift silently stopped working.
+      */}
+      <div className={isPlaying ? "is-playing" : undefined}>
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
+          {/* Served from public/. next/image still optimises it: the 6.9MB PNG
+              goes out as a ~43KB WebP at this size. */}
+          <Image
+            src="/Melody_Wheels.png"
+            alt=""
+            fill
+            priority
+            quality={85}
+            sizes="100vw"
+            className="backdrop object-cover object-center"
+          />
+
+          {/* Scrim, in three passes rather than one flat wash:
+              a vertical fall-off to seat the top bar and the player, a corner
+              vignette to hold the eye centre-frame, and a warm multiply so the
+              cream type sits in the same light as the illustration. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/20 to-black/75" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(120% 80% at 50% 45%, transparent 30%, rgba(0,0,0,0.55) 100%)",
+            }}
+          />
+          <div className="absolute inset-0 bg-[#2a140a] opacity-25 mix-blend-multiply" />
+        </div>
+
+        {/* Grain sits above the artwork but below the UI. */}
+        <div className="grain" aria-hidden />
+
+        <div className="shell relative z-10">
+          <TopBar />
+          <Hero />
+          <PlayerPill />
+        </div>
+      </div>
+    </>
+  );
+}

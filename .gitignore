@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-build/
 /out/
 
 # production
@@ -32,6 +33,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# NOTE: /public/covers is deliberately NOT ignored. The importer downloads the
+# artwork once and the site serves it from this origin, so the files have to be
+# committed or a deploy ships a catalogue with no covers.
 
 # vercel
 .vercel
