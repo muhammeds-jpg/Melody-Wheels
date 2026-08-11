@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { SITE } from "@/config/tracks";
 import { usePresence } from "@/lib/use-presence";
+import { usePlayerStore } from "@/lib/player-store";
 
 /** Brand marks, inline so there is no icon font or CDN dependency. */
 function SpotifyMark() {
@@ -82,7 +83,10 @@ function Clock() {
 
 /** Real listener count, from the heartbeat. Renders nothing until it is known. */
 function OnlineCount() {
-  const count = usePresence();
+  // Someone playing music in a background tab is still listening, so they stay
+  // counted; an idle hidden tab still drops out.
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const count = usePresence(isPlaying);
 
   // Never render a placeholder or a zero: you are always at least one listener,
   // so a 0 on screen would only ever mean the count is broken.

@@ -3,9 +3,10 @@
 import Image from "next/image";
 import { useEffect } from "react";
 import type { Track } from "@/lib/types";
-import { usePlayerStore } from "@/lib/player-store";
+import { usePlayerStore, useCurrentTrack, useDurationMs } from "@/lib/player-store";
 import * as engine from "@/lib/preview-engine";
 import * as spotify from "@/lib/audio-engine";
+import * as media from "@/lib/media-session";
 import { TopBar } from "./TopBar";
 import { Hero } from "./Hero";
 import { PlayerPill } from "./PlayerPill";
@@ -26,6 +27,50 @@ const AUTH_ERROR_COPY: Record<string, string> = {
 
 export function MelodyWheels() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTrack = useCurrentTrack();
+  const durationMs = useDurationMs();
+
+  /**
+   * Publish the track to the OS: lock screen, notification shade, media keys,
+   * Bluetooth buttons, car stereo. Audio already keeps playing when the tab is
+   * backgrounded — this is what makes it visible and controllable while it does.
+   */
+  useEffect(() => {
+    media.publishMetadata(currentTrack);
+  }, [currentTrack]);
+
+  useEffect(() => {
+    media.setPlaybackState(isPlaying ? "playing" : "paused");
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const store = usePlayerStore.getState;
+    return media.registerHandlers({
+      onPlay: () => {
+        if (!store().isPlaying) store().toggle();
+      },
+      onPause: () => {
+        if (store().isPlaying) store().toggle();
+      },
+      onNext: () => store().next(),
+      onPrev: () => store().prev(),
+      onSeekTo: (seconds) => store().seekTo(seconds * 1000),
+      onSeekBy: (delta) => store().seekTo(store().progressMs + delta * 1000),
+    });
+  }, []);
+
+  /**
+   * Keep the OS scrubber roughly in step. Throttled to about once a second:
+   * the engine reports four times that, and the lock screen cannot show it.
+   */
+  useEffect(() => {
+    if (!isPlaying || durationMs <= 0) return;
+    const update = () =>
+      media.setPositionState(usePlayerStore.getState().progressMs, durationMs);
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [isPlaying, durationMs]);
 
   /** Hydrate the catalogue at runtime — nothing about it is baked into the build. */
   useEffect(() => {

@@ -19,8 +19,13 @@ function randomId(): string {
 /**
  * Live listener count. Returns null until the first response lands, so the UI
  * can render nothing rather than flashing a wrong number.
+ *
+ * @param keepAliveWhileHidden - stay counted with the tab in the background.
+ *   Audio keeps playing when the tab is not in front, so someone listening from
+ *   another tab or a locked phone genuinely IS a listener; dropping them made
+ *   the number count visible tabs rather than people hearing music.
  */
-export function usePresence(): number | null {
+export function usePresence(keepAliveWhileHidden = false): number | null {
   const [count, setCount] = useState<number | null>(null);
   const sidRef = useRef<string | null>(null);
 
@@ -64,13 +69,13 @@ export function usePresence(): number | null {
     }
 
     function onVisibility() {
-      // A hidden tab is not a listener; stop beating so it drops out of the
-      // count, and re-register immediately on return.
-      if (document.visibilityState === "hidden") stop();
+      // An idle hidden tab is not a listener, so it stops beating and drops out
+      // of the count. One that is playing audio still is, and keeps beating.
+      if (document.visibilityState === "hidden" && !keepAliveWhileHidden) stop();
       else start();
     }
 
-    if (document.visibilityState === "visible") start();
+    if (document.visibilityState === "visible" || keepAliveWhileHidden) start();
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
@@ -78,7 +83,7 @@ export function usePresence(): number | null {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [keepAliveWhileHidden]);
 
   return count;
 }
