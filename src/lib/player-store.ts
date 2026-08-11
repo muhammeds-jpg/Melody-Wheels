@@ -3,6 +3,7 @@ import type { Track, WebPlaybackState } from "./types";
 import * as preview from "./preview-engine";
 import * as spotify from "./audio-engine";
 import * as youtube from "./youtube-engine";
+import { readResume, resolveResume, writeResume } from "./resume";
 
 /**
  * Three engines behind one set of controls.
@@ -78,6 +79,8 @@ type PlayerState = {
   setPreviewProgress: (positionMs: number, durationMs: number) => void;
   setError: (message: string | null) => void;
   handleEnded: () => void;
+  /** Write the resume point immediately, bypassing the throttle. */
+  savePositionNow: () => void;
 
   /** Mirror of the IFrame player's onStateChange. */
   handleYoutubeState: (phase: YouTubePhase) => void;
@@ -110,6 +113,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
    * goes straight to its preview next time instead of stalling again.
    */
   const blockedVideos = new Set<string>();
+
+  /**
+   * Where to start the FIRST track of the session, restored from a previous
+   * visit. Consumed once — after that, playback position comes from the engine.
+   */
+  let resumeMs = 0;
+
+  /**
+   * Throttle for writing the position. `timeupdate` fires several times a second
+   * and localStorage is synchronous, so persisting every tick would do real work
+   * on the main thread for no benefit.
+   */
+  let lastSaved = 0;
+  function savePosition(force = false) {
+    const { tracks, index, progressMs } = get();
+    const track = tracks[index];
+    if (!track) return;
+    const now = Date.now();
+    if (!force && now - lastSaved < 4000) return;
+    lastSaved = now;
+    writeResume({ trackId: track.id, positionMs: progressMs });
+  }
 
   /** Cancels the pending "YouTube never started" fallback, if one is armed. */
   let watchdog: number | null = null;
@@ -183,10 +208,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // recovery at all — the transport showed Pause over a frozen 0:00.
       if (autoplay) armWatchdog(track);
 
+      // The restored offset applies to the first start only, and is spent here:
+      // leaving it set would make every later track jump to the same timestamp.
+      const startSeconds = resumeMs > 0 ? resumeMs / 1000 : 0;
+      if (startSeconds > 0) resumeMs = 0;
+
       // Before the player exists, `load` queues and replays on connect — so a
       // press that lands during the API load is honoured rather than dropped.
       if (!youtube.isReady()) {
-        youtube.load(track.youtubeId, autoplay);
+        youtube.load(track.youtubeId, autoplay, startSeconds);
         return;
       }
 
@@ -198,7 +228,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
       // Keeping this synchronous matters: it must stay inside the listener's
       // click, or mobile browsers refuse the audio.
-      if (needsExplicitLoad) youtube.load(track.youtubeId, autoplay);
+      if (needsExplicitLoad) youtube.load(track.youtubeId, autoplay, startSeconds);
       else if (autoplay) youtube.play();
       return;
     }
@@ -221,6 +251,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       return;
     }
     preview.load(track.previewUrl);
+    // A preview is 30 seconds of the track, so a resume offset taken from a
+    // full-length stream would be past its end. Only honour one that fits.
+    if (resumeMs > 0) {
+      const seconds = resumeMs / 1000;
+      resumeMs = 0;
+      if (seconds < 25) preview.seek(seconds);
+    }
     if (autoplay) void preview.play();
   }
 
@@ -279,6 +316,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       isBuffering: autoplay,
     });
 
+    // Record the new track at once. A reload immediately after skipping should
+    // land here, not back on whatever was playing before.
+    savePosition(true);
+
     start(track, mode, autoplay);
   }
 
@@ -303,20 +344,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     error: null,
 
     setTracks: (tracks) =>
-      set((s) => ({
-        tracks,
-        index: 0,
-        isLoadingCatalogue: false,
-        catalogueError: null,
-        // Point at YouTube straight away when the list carries video ids, so the
-        // display reads the real length rather than 0:30 before the first press.
-        mode:
-          tracks[0]?.youtubeId && !s.youtubeFailed
-            ? "youtube"
-            : s.spotifyReady
-              ? "spotify"
-              : "preview",
-      })),
+      set((s) => {
+        // Pick up where the last visit stopped. Matched by track id, not index,
+        // so a playlist change resolves to nothing and starts from the top
+        // rather than resuming at whatever song now sits in that slot.
+        const resume = resolveResume(readResume(), tracks);
+        const index = resume?.index ?? 0;
+        resumeMs = resume?.positionMs ?? 0;
+
+        return {
+          tracks,
+          index,
+          // Shown before the first press, so the pill reads "2:31 / 4:56" and
+          // the transport visibly continues rather than appearing to restart.
+          progressMs: resumeMs,
+          isLoadingCatalogue: false,
+          catalogueError: null,
+          // Point at YouTube straight away when the list carries video ids, so
+          // the display reads the real length rather than 0:30 up front.
+          mode:
+            tracks[index]?.youtubeId && !s.youtubeFailed
+              ? "youtube"
+              : s.spotifyReady
+                ? "spotify"
+                : "preview",
+        };
+      }),
 
     setCatalogueError: (catalogueError) => set({ catalogueError, isLoadingCatalogue: false }),
 
@@ -440,13 +493,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       else preview.setMuted(muted);
     },
 
-    setPlaying: (isPlaying) => set({ isPlaying, isBuffering: false, isIdle: false }),
+    setPlaying: (isPlaying) => {
+      set({ isPlaying, isBuffering: false, isIdle: false });
+      // Pausing is the strongest signal that this is the spot to come back to,
+      // so it is written immediately rather than waiting for the next throttle.
+      if (!isPlaying) savePosition(true);
+    },
     setBuffering: (isBuffering) => set({ isBuffering }),
-    setProgress: (progressMs) => set({ progressMs }),
+    setProgress: (progressMs) => {
+      set({ progressMs });
+      savePosition();
+    },
     setError: (error) => set({ error }),
 
-    setPreviewProgress: (progressMs, durationMs) =>
-      set(durationMs > 0 ? { progressMs, engineDurationMs: durationMs } : { progressMs }),
+    setPreviewProgress: (progressMs, durationMs) => {
+      set(durationMs > 0 ? { progressMs, engineDurationMs: durationMs } : { progressMs });
+      savePosition();
+    },
+
+    savePositionNow: () => savePosition(true),
 
     handleEnded: () => goTo(get().index + 1, true),
 
@@ -476,6 +541,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     setYoutubeProgress: (progressMs, durationMs) => {
       if (get().mode !== "youtube") return;
       set(durationMs > 0 ? { progressMs, engineDurationMs: durationMs } : { progressMs });
+      savePosition();
     },
 
     handleYoutubeError: (message) => {

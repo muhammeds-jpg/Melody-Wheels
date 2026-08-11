@@ -180,6 +180,26 @@ export function MelodyWheels() {
     return () => window.clearInterval(timer);
   }, [isPlaying]);
 
+  /**
+   * Save the position on the way out.
+   *
+   * The store throttles writes to once every few seconds, so closing the tab
+   * mid-song would otherwise lose up to that much. `visibilitychange` is the
+   * event that actually fires when a tab is closed or backgrounded on mobile —
+   * `beforeunload` is unreliable there and blocks the back/forward cache.
+   */
+  useEffect(() => {
+    // Unconditional: firing on the way back to visible writes the same value,
+    // and gating it risks missing the one case that matters.
+    const persist = () => usePlayerStore.getState().savePositionNow();
+    document.addEventListener("visibilitychange", persist);
+    window.addEventListener("pagehide", persist);
+    return () => {
+      document.removeEventListener("visibilitychange", persist);
+      window.removeEventListener("pagehide", persist);
+    };
+  }, []);
+
   // Keyboard shortcuts (§33): space/k play-pause, arrows seek, j/l prev/next.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

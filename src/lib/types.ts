@@ -118,13 +118,19 @@ export type SpotifyPlayer = {
 /* ── Minimal YouTube IFrame Player API typings ─────────────────────────────
    Google ships no types for this either; these cover only what is used. */
 
+/**
+ * Either a bare video id, or the options form. Only the object accepts an
+ * offset, which is what the resume-where-you-left-off path needs.
+ */
+export type YouTubeLoadTarget = string | { videoId: string; startSeconds?: number };
+
 export type YouTubePlayer = {
   playVideo: () => void;
   pauseVideo: () => void;
   /** Loads AND plays. */
-  loadVideoById: (videoId: string) => void;
+  loadVideoById: (target: YouTubeLoadTarget) => void;
   /** Loads without playing — no sound until playVideo(). */
-  cueVideoById: (videoId: string) => void;
+  cueVideoById: (target: YouTubeLoadTarget) => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   mute: () => void;
   unMute: () => void;

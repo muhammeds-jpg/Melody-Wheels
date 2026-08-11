@@ -64,7 +64,7 @@ let handlers: YouTubeHandlers | null = null;
 let ticker: number | null = null;
 
 /** What we asked for, so a play() arriving before onReady is not lost. */
-let pending: { videoId: string; autoplay: boolean } | null = null;
+let pending: { videoId: string; autoplay: boolean; startSeconds: number } | null = null;
 let currentVideoId = "";
 /**
  * Has this player ever actually produced playback?
@@ -133,6 +133,7 @@ export function mount(
   container: HTMLElement,
   videoId: string,
   next: YouTubeHandlers,
+  startSeconds = 0,
 ): Promise<YouTubePlayer> {
   handlers = next;
   if (playerPromise) return playerPromise;
@@ -156,6 +157,10 @@ export function mount(
             iv_load_policy: 3,
             // Silences the postMessage origin warnings in the console.
             origin: window.location.origin,
+            // Resume point, when there is one. Set here rather than seeking
+            // after playback starts, so the track opens where it left off
+            // instead of playing a second from the top and jumping.
+            ...(startSeconds > 0 ? { start: Math.floor(startSeconds) } : {}),
           },
           events: {
             onReady: () => {
@@ -163,9 +168,9 @@ export function mount(
               handlers?.onReady();
               // Honour anything requested while the API was still loading.
               if (pending) {
-                const { videoId: id, autoplay } = pending;
+                const { videoId: id, autoplay, startSeconds: at } = pending;
                 pending = null;
-                load(id, autoplay);
+                load(id, autoplay, at);
               }
               resolve(instance);
             },
@@ -209,18 +214,27 @@ export function isReady(): boolean {
   return player !== null;
 }
 
-/** Swap the video. `autoplay` false cues it without making a sound. */
-export function load(videoId: string, autoplay: boolean): void {
+/**
+ * Swap the video. `autoplay` false cues it without making a sound.
+ *
+ * `startSeconds` matters for the resume path: the first press goes through an
+ * explicit load, and `loadVideoById(id)` on its own would start at zero — which
+ * would throw away the restored position every time.
+ */
+export function load(videoId: string, autoplay: boolean, startSeconds = 0): void {
   if (!player) {
-    pending = { videoId, autoplay };
+    pending = { videoId, autoplay, startSeconds };
     return;
   }
   currentVideoId = videoId;
+  const args = startSeconds > 0 ? { videoId, startSeconds } : videoId;
   try {
-    if (autoplay) player.loadVideoById(videoId);
-    else player.cueVideoById(videoId);
+    // The API accepts either a bare id or an options object; the object form is
+    // the only way to pass an offset.
+    if (autoplay) player.loadVideoById(args);
+    else player.cueVideoById(args);
   } catch {
-    pending = { videoId, autoplay };
+    pending = { videoId, autoplay, startSeconds };
   }
 }
 
