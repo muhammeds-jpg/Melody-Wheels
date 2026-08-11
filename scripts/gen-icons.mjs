@@ -1,99 +1,188 @@
-﻿/**
- * Generates the PWA / touch icons from scratch — no dependencies, no binaries.
+#!/usr/bin/env node
+/**
+ * Builds every app icon from the real artwork.
  *
- *   node scripts/gen-icons.mjs
+ *   npm run gen:icons
+ *
+ * The icon is a square crop of the backdrop illustration with the gold logo
+ * centred on it, so a tab, a home-screen shortcut and a shared link all carry
+ * the same picture the site opens with. It replaces a hand-drawn green disc that
+ * had nothing to do with the brand.
+ *
+ * Two variants per size, because they are cropped differently by the platform:
+ *
+ *  - "any"      — shown as-is. The logo can run close to the edges.
+ *  - "maskable" — Android clips it to a circle or squircle and keeps only the
+ *                 central ~80%. The illustration is happy to bleed off, but the
+ *                 logo has to sit inside that safe zone or its ends get sliced.
+ *
+ * Uses sharp, which ships with Next, so there is nothing extra to install.
  */
-import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const sharp = require("sharp");
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
+const BACKDROP = join(PUBLIC, "pattu-vandi-backdrop.png");
+const LOGO = join(PUBLIC, "pattu-vandi-logo.svg");
 
-/* â”€â”€ PNG encoder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c;
-  }
-  return t;
-})();
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+/**
+ * A square crop of the illustration.
+ *
+ * Taken from the full height and centred horizontally, which lands on the bus —
+ * the thing the picture is actually about. `zoom` above 1 tightens in, for the
+ * small sizes where a wide view turns to mush.
+ */
+async function squareBackdrop(size, zoom = 1) {
+  const meta = await sharp(BACKDROP).metadata();
+  const side = Math.round(Math.min(meta.width, meta.height) / zoom);
+  return sharp(BACKDROP)
+    .extract({
+      left: Math.round((meta.width - side) / 2),
+      top: Math.round((meta.height - side) / 2),
+      width: side,
+      height: side,
+    })
+    .resize(size, size, { fit: "cover" })
+    .toBuffer();
 }
 
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const typeBuf = Buffer.from(type, "ascii");
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([len, typeBuf, data, crc]);
+/**
+ * A scrim under the logo.
+ *
+ * The illustration is busy and mid-toned, and gold type laid straight onto it
+ * disappears into the bus. Darkening the middle a little buys the contrast back
+ * without flattening the picture into a grey square.
+ */
+function scrim(size) {
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+       <defs>
+         <radialGradient id="s" cx="50%" cy="50%" r="72%">
+           <stop offset="0%"   stop-color="#000" stop-opacity="0.62"/>
+           <stop offset="55%"  stop-color="#000" stop-opacity="0.42"/>
+           <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+         </radialGradient>
+       </defs>
+       <rect width="${size}" height="${size}" fill="url(#s)"/>
+     </svg>`,
+  );
 }
 
-/** @param {(x:number,y:number)=>[number,number,number]} shade */
-function encodePng(width, height, shade) {
-  const stride = width * 3;
-  const raw = Buffer.alloc((stride + 1) * height);
-  let o = 0;
-  for (let y = 0; y < height; y++) {
-    raw[o++] = 0; // filter: none
-    for (let x = 0; x < width; x++) {
-      const [r, g, b] = shade(x, y);
-      raw[o++] = r;
-      raw[o++] = g;
-      raw[o++] = b;
-    }
-  }
+/** The logo rendered at a share of the icon's width. */
+async function logoAt(size, widthRatio) {
+  const target = Math.round(size * widthRatio);
+  return sharp(LOGO, { density: 600 })
+    .resize({ width: target, fit: "inside" })
+    .png()
+    .toBuffer();
+}
 
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // colour type: truecolour
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
+async function compose({ size, logoRatio, zoom }) {
+  const [base, logo] = await Promise.all([
+    squareBackdrop(size, zoom),
+    logoAt(size, logoRatio),
   ]);
+
+  return sharp(base)
+    .composite([
+      { input: scrim(size), blend: "over" },
+      // `gravity: center` rather than computed offsets: the logo's rendered
+      // height depends on how sharp rounds the aspect ratio, and centring by
+      // hand drifts a pixel or two at some sizes.
+      { input: logo, gravity: "center" },
+    ])
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 }
 
-function iconShader(size) {
-  return (x, y) => {
-    const cx = x / size - 0.5;
-    const cy = y / size - 0.5;
-    const d = Math.sqrt(cx * cx + cy * cy);
-    if (d < 0.06) return [8, 8, 10]; // spindle
-    if (d < 0.34) return [29, 185, 84]; // --color-accent
-    return [8, 8, 10]; // --color-surface
-  };
+/* ── Run ─────────────────────────────────────────────────────────────────── */
+
+const TARGETS = [
+  // Shown as-is; the logo may run wide.
+  { file: "icon-192.png", size: 192, logoRatio: 0.82, zoom: 1.15 },
+  { file: "icon-512.png", size: 512, logoRatio: 0.8, zoom: 1 },
+  // Clipped to a circle/squircle: the logo stays inside the central 80%.
+  { file: "icon-192-maskable.png", size: 192, logoRatio: 0.6, zoom: 1.15 },
+  { file: "icon-512-maskable.png", size: 512, logoRatio: 0.58, zoom: 1 },
+  // iOS rounds the corners itself, so treat it as partly masked.
+  { file: "apple-touch-icon.png", size: 180, logoRatio: 0.72, zoom: 1.15 },
+];
+
+for (const target of TARGETS) {
+  const png = await compose(target);
+  writeFileSync(join(PUBLIC, target.file), png);
+  console.log(`  ${target.file.padEnd(26)} ${target.size}px  ${Math.round(png.length / 1024)}KB`);
 }
 
-/* â”€â”€ Run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/**
+ * The favicon. Zoomed in hard and with a proportionally larger logo, because a
+ * browser tab renders this at 16px — a wide view of a busy illustration becomes
+ * an indistinct smudge at that size, while a tight crop still reads as warm gold
+ * on dark.
+ */
+const favicon = await compose({ size: 96, logoRatio: 0.88, zoom: 1.6 });
+writeFileSync(join(ROOT, "src", "app", "icon.png"), favicon);
+console.log(`  src/app/icon.png           96px  ${Math.round(favicon.length / 1024)}KB`);
 
-mkdirSync(PUBLIC, { recursive: true });
+/**
+ * The social card, 1200x630.
+ *
+ * Wide rather than square, so it takes the illustration almost uncropped — this
+ * is the one place the full scene fits. Written as a static PNG rather than
+ * rendered per request: a card is fetched by a crawler once and then cached
+ * essentially forever, so paying to draw it at runtime buys nothing, and a
+ * runtime failure would bake a blank card into every social platform's cache.
+ */
+async function socialCard() {
+  const width = 1200;
+  const height = 630;
 
-for (const size of [180, 192, 512]) {
-  const name = size === 180 ? "apple-touch-icon.png" : `icon-${size}.png`;
-  writeFileSync(join(PUBLIC, name), encodePng(size, size, iconShader(size)));
-  console.log(`  ${name}`);
+  const base = await sharp(BACKDROP).resize(width, height, { fit: "cover" }).toBuffer();
+  const logo = await sharp(LOGO, { density: 600 })
+    .resize({ width: Math.round(width * 0.6), fit: "inside" })
+    .png()
+    .toBuffer();
+
+  const wash = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+       <defs>
+         <radialGradient id="s" cx="50%" cy="48%" r="70%">
+           <stop offset="0%"   stop-color="#000" stop-opacity="0.58"/>
+           <stop offset="100%" stop-color="#000" stop-opacity="0.30"/>
+         </radialGradient>
+       </defs>
+       <rect width="${width}" height="${height}" fill="url(#s)"/>
+     </svg>`,
+  );
+
+  return (
+    sharp(base)
+      .composite([
+        { input: wash, blend: "over" },
+        { input: logo, gravity: "center" },
+      ])
+      // JPEG, not PNG: this is a painted scene with thousands of colours and no
+      // transparency, which is the case PNG is worst at — it came out at 1.3MB
+      // against roughly a tenth of that here, with nothing visible lost. Some
+      // platforms are strict about card weight, and a rejected card shows
+      // nothing at all.
+      .jpeg({ quality: 86, chromaSubsampling: "4:4:4", mozjpeg: true })
+      .toBuffer()
+  );
 }
 
-// Â§7.6 â€” a blurDataURL must be a real decodable image; emit one rather than
-// hand-rolling a base64 literal into the source.
-const blur = encodePng(8, 8, () => [20, 20, 20]);
-console.log(`\nblurDataURL (already inlined in src/lib/site.ts):`);
-console.log(`data:image/png;base64,${blur.toString("base64")}`);
+const card = await socialCard();
+writeFileSync(join(ROOT, "src", "app", "opengraph-image.jpg"), card);
+console.log(
+  `  src/app/opengraph-image.jpg 1200x630  ${Math.round(card.length / 1024)}KB`,
+);
 
+console.log(`
+Done. Next serves src/app/icon.png and src/app/opengraph-image.jpg by file
+convention; the rest are referenced from src/app/manifest.ts.`);

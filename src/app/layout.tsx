@@ -44,7 +44,18 @@ export const metadata: Metadata = {
     title: SITE.title,
     description: SITE.description,
   },
-  icons: { apple: "/apple-touch-icon.png" },
+  /**
+   * Both declared explicitly.
+   *
+   * Setting `icons` at all overrides Next's app/icon.* file convention, so
+   * naming only `apple` here silently emitted NO <link rel="icon"> and the tab
+   * fell back to a default globe — the favicon existed and was served, but
+   * nothing pointed at it.
+   */
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
