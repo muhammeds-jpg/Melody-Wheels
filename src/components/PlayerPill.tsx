@@ -83,8 +83,11 @@ function Scrubber() {
           className="absolute inset-y-0 left-0 rounded-full bg-[var(--color-ink)]"
           style={{ width: `${ratio * 100}%` }}
         />
+        {/* pointer-coarse keeps the thumb permanently visible on touch: there is
+            no hover on a phone, so it would otherwise stay invisible for the
+            whole drag and leave the gesture with no handle to follow. */}
         <div
-          className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--color-ink)] opacity-0 transition-opacity duration-150 group-hover/scrub:opacity-100 group-focus-visible/scrub:opacity-100"
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--color-ink)] opacity-0 transition-opacity duration-150 group-hover/scrub:opacity-100 group-focus-visible/scrub:opacity-100 pointer-coarse:opacity-100"
           style={{ left: `${ratio * 100}%` }}
         />
       </div>

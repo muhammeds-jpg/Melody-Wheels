@@ -68,6 +68,29 @@
   }
 }
 
+/* ─── Scrolling sub-page ───────────────────────────────────────────────────*/
+/* For ordinary scrolling routes (/playlists), which are not the fixed-height
+   .shell. Same two mobile corrections: 100vh on iOS Safari measures the
+   viewport WITHOUT the dynamic URL bar, so a bare 100vh overflows and the last
+   line hides behind the bar; and the padding has to clear the notch and the
+   home indicator in landscape. Kept here rather than as an inline style so the
+   @supports fallback is expressible at all. */
+.page {
+  min-height: 100vh;
+  padding: 3rem 1.5rem;
+  padding-top: calc(3rem + env(safe-area-inset-top));
+  padding-bottom: calc(3rem + env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  overflow-y: auto;
+}
+
+@supports (min-height: 100dvh) {
+  .page {
+    min-height: 100dvh;
+  }
+}
+
 .stage {
   position: relative;
   min-height: 0;

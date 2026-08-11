@@ -55,13 +55,11 @@ export default async function PlaylistsPage() {
 
   return (
     <main
+      className="page"
       style={{
-        minHeight: "100vh",
         background: "#0b0908",
         color: "#f4efe6",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        padding: "3rem 1.5rem",
-        overflowY: "auto",
       }}
     >
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
