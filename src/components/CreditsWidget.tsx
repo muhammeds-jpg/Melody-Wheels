@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Heart } from "lucide-react";
+import { Info } from "lucide-react";
 
 export function CreditsWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -77,19 +77,19 @@ export function CreditsWidget() {
         </div>
       </div>
 
-      {/* Heart Toggle Button */}
+      {/* Info Toggle Button */}
       <button
         type="button"
         onClick={handleClick}
         aria-label="View developer credits"
         aria-expanded={isOpen}
-        className="group relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-[#241813]/85 backdrop-blur-md border border-white/15 text-[#c2603f] hover:text-[#d97350] shadow-[0_6px_24px_rgba(0,0,0,0.5)] transition-all duration-300 hover:scale-110 hover:border-[#c2603f]/40 hover:bg-[#241813]/95 active:scale-95 focus-visible:outline-none"
+        className="group relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-[#241813]/85 backdrop-blur-md border border-white/15 text-[#c2603f] hover:text-[#e07d5b] shadow-[0_6px_24px_rgba(0,0,0,0.5)] transition-all duration-300 hover:scale-110 hover:border-[#c2603f]/40 hover:bg-[#241813]/95 active:scale-95 focus-visible:outline-none"
       >
-        <Heart
+        <Info
           className={`h-5 w-5 transition-all duration-300 ${
             isOpen
-              ? "fill-[#c2603f] text-[#c2603f] scale-110 drop-shadow-[0_0_8px_rgba(194,96,63,0.6)]"
-              : "text-[#c2603f]/80 group-hover:text-[#c2603f] group-hover:scale-110 group-hover:fill-[#c2603f]/30"
+              ? "text-[#c2603f] scale-110 drop-shadow-[0_0_8px_rgba(194,96,63,0.8)]"
+              : "text-white/80 group-hover:text-[#c2603f] group-hover:scale-110"
           }`}
         />
         {/* Warm Terracotta Glow halo on hover/active */}
