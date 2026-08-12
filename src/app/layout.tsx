@@ -45,17 +45,18 @@ export const metadata: Metadata = {
     description: SITE.description,
   },
   /**
-   * Both declared explicitly.
+   * NO `icons` field, deliberately.
    *
-   * Setting `icons` at all overrides Next's app/icon.* file convention, so
-   * naming only `apple` here silently emitted NO <link rel="icon"> and the tab
-   * fell back to a default globe — the favicon existed and was served, but
-   * nothing pointed at it.
+   * Declaring one overrides Next's app/icon.* file convention wholesale — which
+   * is a trap twice over. Naming only `apple` emitted no <link rel="icon"> at
+   * all, and the tab fell back to a default globe. Naming `icon: "/icon.png"`
+   * fixed that but emitted a bare, unversioned URL, so a browser that had cached
+   * the old favicon kept showing it however many times the file was rebuilt.
+   *
+   * The file convention emits both links with a content hash on each URL, so a
+   * new icon is a new URL and every cache picks it up. src/app/icon.png and
+   * src/app/apple-icon.png are what it reads; `npm run gen:icons` writes them.
    */
-  icons: {
-    icon: "/icon.png",
-    apple: "/apple-touch-icon.png",
-  },
 };
 
 export const viewport: Viewport = {

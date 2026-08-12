@@ -317,6 +317,13 @@ function queryFor(title, artist) {
  * the IFrame player answers error 101/150 and the track goes silent. That is not
  * detectable from search results, only from the watch page, so it is checked
  * here rather than discovered by a listener.
+ *
+ * It is a filter, NOT a guarantee, and must not be treated as one. Checked
+ * against a video the IFrame player really did refuse with 150, this page
+ * answered `playableInEmbed: true, status: OK` — label restrictions can depend on
+ * the embedding origin, which no request from here can reproduce. The runtime
+ * fallback in player-store.ts is what actually covers it; see the notes in
+ * `handleYoutubeError`.
  */
 async function verifyEmbeddable(videoId) {
   try {

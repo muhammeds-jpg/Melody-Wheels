@@ -46,13 +46,20 @@ function siteUrl(): string {
 }
 
 export const SITE = {
-  name: "Pattu Vandi",
+  /**
+   * The one place the site's name is written. The tab title, the PWA install
+   * name, the OS lock screen, the hidden heading on the stage and the social
+   * card all read it from here, so there is nothing to keep in step by hand.
+   */
+  name: "Melody Wheels",
   // Used for the tab title, the PWA manifest, and the social card.
-  title: "Pattu Vandi — Music for the journey",
+  title: "Melody Wheels — Music for the journey",
   description:
     "A music player that happens to be a website. One screen, one song at a time, and a way straight into Spotify.",
   url: siteUrl(),
-  twitter: "@pattuvandi",
+  // Only used for the twitter:creator card tag. Correct it, or drop the tag from
+  // layout.tsx, if this is not a handle you hold.
+  twitter: "@melodywheels",
 
   // §9 — both links open the exact playlist the site plays, never a homepage.
   // Neither needs an API: they are only URLs.

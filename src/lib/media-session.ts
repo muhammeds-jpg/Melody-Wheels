@@ -12,6 +12,7 @@
  * it dislikes — a rejected media control must never take playback down with it.
  */
 import type { Track } from "./types";
+import { SITE } from "@/config/tracks";
 
 type Handlers = {
   onPlay: () => void;
@@ -75,7 +76,9 @@ export function publishMetadata(track: Track | null): void {
     ms.metadata = new MediaMetadata({
       title: track.name,
       artist: track.artist,
-      album: track.album || "Pattu Vandi",
+      // Read from SITE rather than written out, so renaming the site does not
+      // leave the old name on the listener's lock screen.
+      album: track.album || SITE.name,
       artwork: artworkFor(track),
     });
   } catch {

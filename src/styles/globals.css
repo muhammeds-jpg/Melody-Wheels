@@ -10,9 +10,6 @@
   --color-ink-soft: #cdc3b6;
   --color-ink-faint: #8d8377;
   --color-terracotta: #c2603f;
-  /* The gold the title logo is drawn in. Anything that sits beside the mark
-     uses this same value so the two read as one piece of branding. */
-  --color-gold: #e0b24e;
 
   --font-sans: var(--font-sans-stack), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), ui-serif, Georgia, serif;
@@ -121,29 +118,19 @@
   font-size: 0.6875rem;
   letter-spacing: 0.34em;
   text-transform: uppercase;
-  /* Gold rather than faded ink: it is the only other type on the stage, and
-     matching the logo makes it read as part of the mark instead of a caption. */
-  color: var(--color-gold);
+  /* White, held back by opacity rather than by hue — the same white the top bar
+     uses, so every small caption on the page speaks in one voice. The shadow is
+     what keeps it legible over a frame of moving video. */
+  color: rgb(255 255 255 / 0.72);
+  text-shadow: 0 1px 10px rgb(0 0 0 / 0.7);
   text-indent: 0.34em; /* optical: letter-spacing pads the right edge only */
 }
 
-/* The other small caption on the stage. Same gold as the eyebrow and the logo,
-   so all three read as one mark rather than three unrelated bits of type. */
+/* The other small caption on the stage. Same treatment as the eyebrow, so the
+   two read as a pair framing the title rather than two unrelated bits of type. */
 .press-hint {
-  color: var(--color-gold);
-}
-
-/* The wordmark is a drawn logo, so it is sized by width, not by font-size.
-   The floor keeps it inside a 280px viewport once .stage padding is taken out;
-   the ceiling stops it outgrowing the stage on a desktop monitor. */
-.wordmark {
-  display: block;
-  width: clamp(15rem, 74vw, 40rem);
-  height: auto;
-  /* Both axes get constrained at short viewport heights; contain keeps the
-     drawing from stretching when they fight. */
-  object-fit: contain;
-  filter: drop-shadow(0 2px 40px rgb(0 0 0 / 0.5));
+  color: rgb(255 255 255 / 0.72);
+  text-shadow: 0 1px 10px rgb(0 0 0 / 0.7);
 }
 
 .track-title {
@@ -400,9 +387,9 @@
 }
 
 /* ─── Short viewports ──────────────────────────────────────────────────────
-   A landscape phone leaves ~126px of stage once a stacked pill is in place —
-   not enough for a two-line wordmark. Collapse the pill back to one row and
-   shrink the display type instead of letting the layout overflow. */
+   A landscape phone leaves ~126px of stage once a stacked pill is in place.
+   Collapse the pill back to one row and drop the captions rather than letting
+   the layout overflow. */
 @media (max-height: 520px) {
   .player-grid {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -415,14 +402,6 @@
 
   .pp-controls {
     justify-self: end;
-  }
-
-  /* Height is the scarce axis here, so drive the logo off it and let the
-     width follow the aspect ratio. */
-  .wordmark {
-    width: auto;
-    height: clamp(2.25rem, 16vh, 4.5rem);
-    max-width: 74vw;
   }
 
   .eyebrow,

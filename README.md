@@ -1,4 +1,4 @@
-# Pattu Vandi
+# Melody Wheels
 
 A music player that happens to be a website. One screen, one song at a time, and
 a way straight into the playlist on Spotify or YouTube Music.
@@ -49,8 +49,17 @@ there is nothing to sign in to.
 ```bash
 npm install
 npm run sync          # builds the catalogue from the playlist
-npm run dev           # http://127.0.0.1:3000
+npm run dev           # http://localhost:3000
 ```
+
+**Open it at `localhost`, not at an IP.** YouTube refuses to embed a large share
+of music videos when the embedding origin is a bare IP address — the IFrame
+player answers error 150 and the app falls back to 30-second previews, which
+looks exactly like a broken catalogue. `127.0.0.1` counts as an IP for this
+purpose and is no better than a LAN address; over one 44-track playlist, in the
+same browser, `localhost` played 44/44 while `127.0.0.1` played 11/44 and
+`192.168.1.24` played 12/44. Use `127.0.0.1` only for the optional Spotify OAuth
+round trip, whose registered redirect URI names it.
 
 There is no `.env.local` step. Copy `.env.example` if you want to change the
 playlist by hand or enable the optional extras, but nothing in it is required.
@@ -127,7 +136,7 @@ catalogue, so it does not need to be set on the host.
 
 | | |
 | --- | --- |
-| `npm run dev` | dev server on 127.0.0.1:3000 |
+| `npm run dev` | dev server — open it at localhost:3000, not at an IP |
 | `npm run sync` | rebuild the catalogue from the playlist |
 | `npm run sync -- URL_OR_ID` | switch to a different playlist |
 | `npm run build` | production build |
@@ -162,7 +171,7 @@ src/
     media-session.ts          lock screen, media keys, Bluetooth buttons
     presence.ts               the live listener count
   components/
-    PattuVandi.tsx            the whole screen; wires the engines to the UI
+    MelodyWheels.tsx          the whole screen; wires the engines to the UI
     YouTubeMount.tsx          hosts the iframe that makes the sound
     PlayerPill.tsx            artwork, scrubber, transport
 ```

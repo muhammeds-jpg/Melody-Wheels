@@ -34,7 +34,7 @@ if (existsSync(ENV_FILE)) {
 const configuredId = env.NEXT_PUBLIC_SPOTIFY_PLAYLIST_ID ?? "";
 let problems = 0;
 
-console.log("\nPattu Vandi — preflight\n");
+console.log("\nMelody Wheels — preflight\n");
 console.log("The playlist");
 
 if (!configuredId) {
@@ -165,7 +165,10 @@ if (env.NEXT_PUBLIC_SITE_URL && !/127\.0\.0\.1|localhost/.test(env.NEXT_PUBLIC_S
 
 console.log(
   problems === 0
-    ? "\nReady. `npm run dev` and open http://127.0.0.1:3000\n"
+    ? "\nReady. `npm run dev` and open http://localhost:3000\n" +
+      "      Use the hostname, not 127.0.0.1 and not a LAN IP: YouTube refuses to\n" +
+      "      embed most music videos on a bare-IP origin, and the player then falls\n" +
+      "      back to 30-second previews.\n"
     : `\n${problems} thing(s) to fix, listed above.\n`,
 );
 process.exit(problems === 0 ? 0 : 1);

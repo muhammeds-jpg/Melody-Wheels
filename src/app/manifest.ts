@@ -14,8 +14,8 @@ export default function manifest(): MetadataRoute.Manifest {
      * Separate files per purpose, not the same PNG listed twice.
      *
      * Android clips a maskable icon to a circle or squircle and keeps only the
-     * central ~80%, so the logo has to sit inside that safe zone or its ends get
-     * sliced off. The "any" variant is shown whole and lets the logo run wider.
+     * central ~80%, so the wordmark has to sit inside that safe zone or its ends
+     * get sliced off. The "any" variant is shown whole and lets it run wider.
      * `npm run gen:icons` builds both from the backdrop artwork.
      *
      * Listed as separate entries per purpose rather than the spec's

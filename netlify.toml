@@ -1,4 +1,4 @@
-# Netlify build settings for Pattu Vandi.
+# Netlify build settings for Melody Wheels.
 #
 # This is a server-rendered Next.js app, NOT a static export — it has route
 # handlers under /api/* that resolve the playlist. Those only exist if Netlify's

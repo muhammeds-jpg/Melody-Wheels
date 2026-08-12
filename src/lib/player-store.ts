@@ -92,6 +92,37 @@ type PlayerState = {
 };
 
 /**
+ * Says the one thing worth saying when YouTube refuses an embed: check the
+ * address bar.
+ *
+ * A bare IP origin — a LAN address, or 127.0.0.1, which counts as one — makes
+ * YouTube refuse a large share of music videos with error 150, and the player
+ * quietly serves 30-second previews instead. That is indistinguishable from a
+ * badly-matched catalogue unless someone happens to know this, so the console
+ * says it rather than leaving the next person to measure it again. Measured over
+ * one 44-track playlist in one browser: localhost 44/44, 127.0.0.1 11/44,
+ * 192.168.x.x 12/44.
+ *
+ * Once per session, and console-only: it is a note for whoever is building the
+ * site, not something to put in front of a listener.
+ */
+let warnedAboutOrigin = false;
+function warnIfBareIpOrigin(): void {
+  if (warnedAboutOrigin || typeof window === "undefined") return;
+  // Bracketed forms are IPv6 literals; the dotted form covers IPv4.
+  const host = window.location.hostname;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && !host.startsWith("[")) return;
+  warnedAboutOrigin = true;
+  console.warn(
+    `youtube: refused to embed on origin ${window.location.origin}. YouTube ` +
+      `blocks many music videos when the embedding origin is a bare IP address, ` +
+      `so these tracks drop to 30-second previews. Open the site at ` +
+      `http://localhost:${window.location.port || "3000"} instead — the hostname, ` +
+      `not an IP — or deploy it to a real domain.`,
+  );
+}
+
+/**
  * The duration of whatever is ACTUALLY playing — never a number borrowed from
  * the other engine. See `engineDurationMs`.
  */
@@ -113,6 +144,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
    * goes straight to its preview next time instead of stalling again.
    */
   const blockedVideos = new Set<string>();
+
+  /**
+   * How many tracks in a row have been stepped over because their video was
+   * blocked and they had no preview to fall back to.
+   *
+   * Bounded, and reset the moment anything actually plays. Skipping on an error
+   * is what keeps the music going, but each skip can raise the same error again,
+   * and without a ceiling a playlist of blocked videos would race through itself
+   * on a chain of error events.
+   */
+  let blockedRun = 0;
 
   /**
    * Where to start the FIRST track of the session, restored from a previous
@@ -344,7 +386,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     error: null,
 
     setTracks: (tracks) =>
-      set((s) => {
+      set(() => {
         // Pick up where the last visit stopped. Matched by track id, not index,
         // so a playlist change resolves to nothing and starts from the top
         // rather than resuming at whatever song now sits in that slot.
@@ -362,12 +404,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           catalogueError: null,
           // Point at YouTube straight away when the list carries video ids, so
           // the display reads the real length rather than 0:30 up front.
-          mode:
-            tracks[index]?.youtubeId && !s.youtubeFailed
-              ? "youtube"
-              : s.spotifyReady
-                ? "spotify"
-                : "preview",
+          //
+          // Through `bestMode` rather than its own copy of the rule: an embed
+          // refusal can already have arrived by the time the catalogue lands —
+          // the iframe starts loading with the page — and a hand-rolled check
+          // here would point at a video already known to be blocked.
+          mode: bestMode(tracks[index]),
         };
       }),
 
@@ -494,6 +536,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     setPlaying: (isPlaying) => {
+      // Sound is coming out, so the run of blocked videos has ended here too.
+      if (isPlaying) blockedRun = 0;
       set({ isPlaying, isBuffering: false, isIdle: false });
       // Pausing is the strongest signal that this is the spot to come back to,
       // so it is written immediately rather than waiting for the next throttle.
@@ -521,8 +565,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (get().mode !== "youtube") return;
       switch (phase) {
         case "playing":
-          // It made it. Stop the fallback from stealing playback later.
+          // It made it. Stop the fallback from stealing playback later, and let
+          // the skip budget refill — a run of blocked videos is over.
           clearWatchdog();
+          blockedRun = 0;
           set({ isPlaying: true, isBuffering: false, isIdle: false, error: null });
           break;
         case "paused":
@@ -549,15 +595,54 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const { tracks, index, isIdle } = get();
       const track = tracks[index];
 
-      // "The uploader doesn't allow this off YouTube" is permanent. Retrying is
-      // pointless, so drop this track to its 30-second preview and remember the
-      // video, rather than stalling on a play button that will never work.
-      if (youtube.isEmbedBlocked(message) && track?.youtubeId) {
-        blockedVideos.add(track.youtubeId);
+      /**
+       * Which video failed, asked of the ENGINE rather than inferred from the
+       * store's current index.
+       *
+       * This is the fix for a message that had no way of clearing itself. The
+       * iframe is built and its video cued from the committed catalogue as the
+       * page loads, while `tracks` stays empty until /api/tracks answers — and a
+       * video the uploader has blocked reports it the instant it is cued, which
+       * is usually inside that window. Reading the id from `tracks[index]` found
+       * `undefined` there, skipped every fallback below, and left the raw
+       * "the uploader doesn't allow this video off YouTube" pinned to the player
+       * over a play button that would in fact have worked.
+       */
+      const failedId = youtube.currentVideo();
+
+      // Being refused an embed is permanent — retrying it is pointless — so the
+      // video is remembered and never chosen again this session.
+      if (youtube.isEmbedBlocked(message)) {
+        if (failedId) blockedVideos.add(failedId);
+        warnIfBareIpOrigin();
+
+        // No catalogue yet: nothing to fall back to and nothing worth saying.
+        // The id is recorded, so whatever chooses next will not choose this.
+        if (!track) {
+          set({ isBuffering: false, isPlaying: false, error: null });
+          return;
+        }
+
+        // Drop to the 30-second preview, and keep playing if we already were.
         if (track.previewUrl) {
           set({ mode: "preview", engineDurationMs: 0, isBuffering: !isIdle, error: null });
           preview.load(track.previewUrl);
           if (!isIdle) void preview.play();
+          return;
+        }
+
+        // Blocked, and no preview either. Nothing has started yet, so say
+        // nothing: `isPlayable` now reports false for this track, and the first
+        // press steps over it the same way it steps over a silent one.
+        if (isIdle) {
+          set({ isBuffering: false, isPlaying: false, error: null });
+          return;
+        }
+
+        // Mid-listen, so keep the music going rather than stopping on a message.
+        if (blockedRun < tracks.length) {
+          blockedRun += 1;
+          goTo(index + 1, true);
           return;
         }
       }

@@ -1,6 +1,6 @@
 /**
  * §12 — Spotify Web Playback SDK. No iframe embed: the SDK registers a Spotify
- * Connect device in the browser and streams into it, and Pattu Vandi draws its
+ * Connect device in the browser and streams into it, and Melody Wheels draws its
  * own UI on top.
  *
  * ONE player, created at module scope, never inside the React tree. A second one

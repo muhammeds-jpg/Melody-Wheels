@@ -13,9 +13,21 @@ const nextConfig: NextConfig = {
    * Silences the dev-only cross-origin warning when the site is opened from
    * another device on the LAN. Dev server only — it has no effect on production.
    *
-   * Note that Spotify login will NOT work over a LAN IP: OAuth needs the exact
-   * registered redirect URI, and the SDK needs a secure context. Use
-   * http://127.0.0.1:3000 for anything involving playback.
+   * OPEN THE SITE AT http://localhost:3000 — the hostname, never an IP.
+   *
+   * YouTube refuses to embed a large share of music videos when the embedding
+   * origin is a bare IP address, and answers the IFrame player with error 150.
+   * The app then falls back to 30-second previews, which looks exactly like a
+   * broken catalogue and is not one. Measured over one 44-track playlist, same
+   * browser, same minute:
+   *
+   *   http://localhost:3300      44/44 played
+   *   http://127.0.0.1:3300      11/44 played, 33 refused
+   *   http://192.168.1.24:3300   12/44 played, 32 refused
+   *
+   * 127.0.0.1 is no better than a LAN IP here: what matters is hostname vs IP
+   * literal, not local vs remote. Use 127.0.0.1 only for the optional Spotify
+   * OAuth round trip, whose registered redirect URI names it.
    */
   allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.24"],
   images: {
@@ -34,9 +46,10 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "is1-ssl.mzstatic.com", pathname: "/image/**" },
     ],
     formats: ["image/webp"],
-    // Next 16 will reject any quality not declared here. 85 is what the
-    // backdrop requests; 75 is next/image's default for everything else.
-    qualities: [75, 85],
+    // Next 16 will reject any quality not declared here, and 75 is next/image's
+    // default. The backdrop used to ask for 85; it is a video now and goes
+    // nowhere near the image optimizer, so nothing else asks for anything else.
+    qualities: [75],
   },
   // §29 — keep lucide-react from pulling its barrel into the client bundle.
   experimental: {
