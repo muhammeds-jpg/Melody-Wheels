@@ -10,6 +10,7 @@ import { TopBar } from "./TopBar";
 import { Hero } from "./Hero";
 import { PlayerPill } from "./PlayerPill";
 import { YouTubeMount } from "./YouTubeMount";
+import { CreditsWidget } from "./CreditsWidget";
 
 /**
  * What the optional Spotify auth routes redirect back with. Reaching any of
@@ -388,6 +389,7 @@ export function MelodyWheels() {
           <TopBar />
           <Hero />
           <PlayerPill />
+          <CreditsWidget />
         </div>
       </div>
     </>

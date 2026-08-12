@@ -12,8 +12,6 @@ import { usePlayerStore } from "@/lib/player-store";
 export function Hero() {
   const isLoadingCatalogue = usePlayerStore((s) => s.isLoadingCatalogue);
 
-  // The section carries no aria-label: the heading inside names it, and doing
-  // both made a screen reader announce the site's name twice in a row.
   return (
     <section className="stage flex items-center justify-center px-5 sm:px-6">
       <div className="anim-stage flex flex-col items-center text-center">

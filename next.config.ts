@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
    * literal, not local vs remote. Use 127.0.0.1 only for the optional Spotify
    * OAuth round trip, whose registered redirect URI names it.
    */
-  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.24"],
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.24", "192.168.68.121"],
   images: {
     // Album artwork is hotlinked rather than re-hosted: Spotify's developer
     // terms restrict copying and modifying their images.
